@@ -1,7 +1,7 @@
 import { difference } from 'polygon-clipping'
 import type { QrMatrix } from './encode'
 import { extrudeRing, type Triangle } from './extrude'
-import { isFinderCell, makeLayout, moduleOrigin } from './layout'
+import { isReservedCell, makeLayout, moduleOrigin } from './layout'
 import { applyLogoClear, logoClearRect, maskToPolygons } from './logo'
 import { offsetPolygon } from './offset'
 import { frameRing, modulePoly, squarePoly, type Polygon } from './shapes'
@@ -49,7 +49,7 @@ function blackModulePolys(
           o.x,
           o.y,
           layout.moduleMm,
-          isFinderCell(layout.matrixSize, r, c),
+          isReservedCell(layout.matrixSize, r, c),
         ),
       )
     }
