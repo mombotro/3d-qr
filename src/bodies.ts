@@ -1,4 +1,4 @@
-import { difference } from 'polygon-clipping'
+import { difference, type Pair, type Polygon as ClipPolygon } from 'polygon-clipping'
 import type { QrMatrix } from './encode'
 import { extrudeRing, type Triangle } from './extrude'
 import { isReservedCell, makeLayout, moduleOrigin } from './layout'
@@ -12,8 +12,8 @@ export type Bodies = {
   white: Triangle[]
 }
 
-function toRing(poly: Polygon): number[][] {
-  const ring = poly.map((p) => [p.x, p.y])
+function toRing(poly: Polygon): Pair[] {
+  const ring: Pair[] = poly.map((p) => [p.x, p.y])
   const first = ring[0]
   const last = ring[ring.length - 1]
   if (!first || !last) return ring
@@ -98,8 +98,8 @@ export function buildBodies(
     ),
   }
 
-  const plate = [toRing(squarePoly(0, 0, layout.widthMm))]
-  const clips = [
+  const plate: ClipPolygon = [toRing(squarePoly(0, 0, layout.widthMm))]
+  const clips: ClipPolygon[] = [
     [toRing(subtractFrame.outer), toRing(subtractFrame.hole)],
     ...grownModules.map((p) => [toRing(p)]),
   ]
