@@ -34,6 +34,23 @@ function intersect(
   return { x: p1.x + t * d1.x, y: p1.y + t * d1.y }
 }
 
+export function signedArea(poly: Polygon): number {
+  let a = 0
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i]
+    const q = poly[(i + 1) % poly.length]
+    a += p.x * q.y - q.x * p.y
+  }
+  return a / 2
+}
+
+export function insetPolygon(poly: Polygon, insetMm: number): Polygon {
+  if (insetMm === 0) return poly.map((p) => ({ ...p }))
+  const area = signedArea(poly)
+  const delta = area >= 0 ? -insetMm : insetMm
+  return offsetPolygon(poly, delta)
+}
+
 export function offsetPolygon(poly: Polygon, delta: number): Polygon {
   if (poly.length < 3 || delta === 0) return poly.map((p) => ({ ...p }))
   const n = poly.length
@@ -48,7 +65,13 @@ export function offsetPolygon(poly: Polygon, delta: number): Polygon {
     const p2 = { x: curr.x + n2.x * delta, y: curr.y + n2.y * delta }
     const d1 = { x: curr.x - prev.x, y: curr.y - prev.y }
     const d2 = { x: next.x - curr.x, y: next.y - curr.y }
-    out.push(intersect(p1, d1, p2, d2))
+    const hit = intersect(p1, d1, p2, d2)
+    const miter = Math.hypot(hit.x - curr.x, hit.y - curr.y)
+    if (miter > Math.abs(delta) * 3) {
+      out.push(p1, p2)
+    } else {
+      out.push(hit)
+    }
   }
   return out
 }

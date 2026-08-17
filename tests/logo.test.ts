@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   applyLogoClear,
   clampLogoPercent,
+  clipMaskToCircle,
   logoClearRect,
+  logoSizePercentForMm,
   luminance,
   maskToPolygons,
   thresholdMask,
@@ -58,9 +60,27 @@ describe('applyLogoClear', () => {
   })
 })
 
+describe('logoSizePercentForMm', () => {
+  it('picks a module window near the requested millimetres', () => {
+    const percent = logoSizePercentForMm(10, 1, 25)
+    expect(logoClearRect(25, percent).r1 - logoClearRect(25, percent).r0).toBe(10)
+  })
+})
+
+describe('clipMaskToCircle', () => {
+  it('keeps the center and clears a corner', () => {
+    const n = 8
+    const mask = Array.from({ length: n }, () => Array<boolean>(n).fill(true))
+    const clipped = clipMaskToCircle(mask)
+    expect(clipped[4][4]).toBe(true)
+    expect(clipped[0][0]).toBe(false)
+  })
+})
+
 describe('clampLogoPercent', () => {
-  it('stops a version 1 logo at 23 percent', () => {
-    expect(clampLogoPercent(30, 21)).toBe(23)
+  it('allows 50 percent on a version 1 code', () => {
+    expect(clampLogoPercent(50, 21)).toBe(50)
+    expect(clampLogoPercent(90, 21)).toBe(50)
   })
 })
 
@@ -76,5 +96,30 @@ describe('maskToPolygons', () => {
         { x: 10, y: 25 },
       ],
     ])
+  })
+
+  it('merges a solid block into one rectangle', () => {
+    const mask = [
+      [true, true],
+      [true, true],
+    ]
+    const polys = maskToPolygons(mask, 10, 20, 8, 8)
+    expect(polys).toHaveLength(1)
+    expect(polys[0]).toEqual([
+      { x: 10, y: 20 },
+      { x: 18, y: 20 },
+      { x: 18, y: 28 },
+      { x: 10, y: 28 },
+    ])
+  })
+
+  it('caps a large photo mask so a rebuild stays small', () => {
+    const n = 128
+    const mask = Array.from({ length: n }, (_, r) =>
+      Array.from({ length: n }, (_, c) => (r + c) % 3 !== 0),
+    )
+    const polys = maskToPolygons(mask, 0, 0, 20, 20)
+    expect(polys.length).toBeLessThan(800)
+    expect(polys.length).toBeGreaterThan(0)
   })
 })

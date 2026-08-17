@@ -1,12 +1,24 @@
-import { FRAME_MODULES, QUIET_ZONE_MODULES } from './types'
+import { dogtagHole } from './shapes'
+import {
+  FRAME_MODULES,
+  QUIET_ZONE_MODULES,
+  ROUNDED_TAG_RADIUS,
+  type PlateShape,
+} from './types'
 
 export type Layout = {
+  shape: PlateShape
   widthMm: number
+  heightMm: number
   moduleMm: number
   frameMm: number
   quietZoneMm: number
   matrixSize: number
-  matrixOriginMm: number
+  matrixOriginX: number
+  matrixOriginY: number
+  qrOffsetXMm: number
+  qrOffsetYMm: number
+  qrSizePercent: number
 }
 
 const ALIGNMENT: Record<number, number[]> = {
@@ -51,23 +63,192 @@ const ALIGNMENT: Record<number, number[]> = {
   40: [6, 30, 58, 86, 114, 142, 170],
 }
 
-export function makeLayout(widthMm: number, matrixSize: number): Layout {
-  const pitch = matrixSize + 2 * FRAME_MODULES + 2 * QUIET_ZONE_MODULES
-  const moduleMm = widthMm / pitch
-  return {
-    widthMm,
-    moduleMm,
-    frameMm: FRAME_MODULES * moduleMm,
-    quietZoneMm: QUIET_ZONE_MODULES * moduleMm,
-    matrixSize,
-    matrixOriginMm: (FRAME_MODULES + QUIET_ZONE_MODULES) * moduleMm,
+export function plateBounds(
+  shape: PlateShape,
+  sizeMm: number,
+  heightMm = sizeMm,
+): { widthMm: number; heightMm: number } {
+  if (shape === 'hexagon') {
+    return { widthMm: (sizeMm * 2) / Math.sqrt(3), heightMm: sizeMm }
   }
+  if (shape === 'rect' || shape === 'dogtag' || shape === 'custom' || shape === 'cassette') {
+    return { widthMm: sizeMm, heightMm }
+  }
+  return { widthMm: sizeMm, heightMm: sizeMm }
+}
+
+function moduleMmFor(
+  shape: PlateShape,
+  sizeMm: number,
+  matrixSize: number,
+  heightMm: number,
+): number {
+  const content = matrixSize + 2 * QUIET_ZONE_MODULES
+  const frameBoth = 2 * FRAME_MODULES
+  if (shape === 'circle') {
+    return sizeMm / (content * Math.SQRT2 + frameBoth)
+  }
+  if (shape === 'hexagon') {
+    const k = Math.sqrt(3) - 1
+    return (k * sizeMm) / (content + 4 * k)
+  }
+  if (shape === 'rounded') {
+    const a = 1 - 1 / Math.SQRT2
+    const m = (sizeMm * (1 - 0.3 * a)) / (content + 4 * (1 - a))
+    if (2 * m < ROUNDED_TAG_RADIUS * sizeMm) return m
+  }
+  const short =
+    shape === 'rect' || shape === 'dogtag' || shape === 'custom' || shape === 'cassette'
+      ? Math.min(sizeMm, heightMm)
+      : sizeMm
+  return short / (content + frameBoth)
+}
+
+export function clampQrOffset(
+  shape: PlateShape,
+  widthMm: number,
+  heightMm: number,
+  frameMm: number,
+  contentMm: number,
+  offsetXMm: number,
+  offsetYMm: number,
+  hasDogtagHole = false,
+  holeDiameterMm = 4,
+): { x: number; y: number } {
+  const maxX = Math.max(0, (widthMm - 2 * frameMm - contentMm) / 2)
+  const maxY = Math.max(0, (heightMm - 2 * frameMm - contentMm) / 2)
+  let minX = -maxX
+  let minY = -maxY
+  const xMax = maxX
+  const yMax = maxY
+  if (hasDogtagHole) {
+    const hole = dogtagHole(widthMm, heightMm, holeDiameterMm)
+    const clear = hole.diameter / 2 + 1.5 + contentMm / 2
+    if (widthMm >= heightMm) {
+      minX = Math.max(minX, hole.cx + clear - widthMm / 2)
+    } else {
+      minY = Math.max(minY, hole.cy + clear - heightMm / 2)
+    }
+  }
+  return {
+    x: Math.min(xMax, Math.max(minX, offsetXMm)),
+    y: Math.min(yMax, Math.max(minY, offsetYMm)),
+  }
+}
+
+export function makeLayout(
+  sizeMm: number,
+  matrixSize: number,
+  shape: PlateShape = 'square',
+  heightMm?: number,
+  offsetXMm = 0,
+  offsetYMm = 0,
+  hasDogtagHole = false,
+  holeDiameterMm = 4,
+  qrSizePercent = 100,
+): Layout {
+  const tagHeight = heightMm ?? sizeMm
+  const fullModule = moduleMmFor(shape, sizeMm, matrixSize, tagHeight)
+  const frameMm = FRAME_MODULES * fullModule
+  const bounds = plateBounds(shape, sizeMm, tagHeight)
+  const widthMm = bounds.widthMm
+  const plateHeight = bounds.heightMm
+  const content100 = (matrixSize + 2 * QUIET_ZONE_MODULES) * fullModule
+  const guess = clampQrOffset(
+    shape,
+    widthMm,
+    plateHeight,
+    frameMm,
+    content100,
+    offsetXMm,
+    offsetYMm,
+    hasDogtagHole,
+    holeDiameterMm,
+  )
+  const maxContent = maxContentAtOffset(
+    widthMm,
+    plateHeight,
+    frameMm,
+    guess.x,
+    guess.y,
+    hasDogtagHole,
+    holeDiameterMm,
+  )
+  const minQuiet = 1
+  const asked = Math.min(2, Math.max(0.4, qrSizePercent / 100))
+  let moduleMm = fullModule * asked
+  let quiet = QUIET_ZONE_MODULES
+  let contentMm = (matrixSize + 2 * quiet) * moduleMm
+  if (asked > 1) {
+    quiet = (maxContent / moduleMm - matrixSize) / 2
+    if (quiet < minQuiet) {
+      quiet = minQuiet
+      moduleMm = maxContent / (matrixSize + 2 * minQuiet)
+    }
+    contentMm = (matrixSize + 2 * quiet) * moduleMm
+  } else if (contentMm > maxContent) {
+    moduleMm = maxContent / (matrixSize + 2 * quiet)
+    contentMm = (matrixSize + 2 * quiet) * moduleMm
+  }
+  const matrixMm = matrixSize * moduleMm
+  const edgeMm = moduleMm
+  const shift = clampQrOffset(
+    shape,
+    widthMm,
+    plateHeight,
+    edgeMm,
+    matrixMm,
+    offsetXMm,
+    offsetYMm,
+    hasDogtagHole,
+    holeDiameterMm,
+  )
+  return {
+    shape,
+    widthMm,
+    heightMm: plateHeight,
+    moduleMm,
+    frameMm,
+    quietZoneMm: quiet * moduleMm,
+    matrixSize,
+    matrixOriginX: (widthMm - contentMm) / 2 + quiet * moduleMm + shift.x,
+    matrixOriginY: (plateHeight - contentMm) / 2 + quiet * moduleMm + shift.y,
+    qrOffsetXMm: shift.x,
+    qrOffsetYMm: shift.y,
+    qrSizePercent: fullModule > 0 ? (moduleMm / fullModule) * 100 : 100,
+  }
+}
+
+function maxContentAtOffset(
+  widthMm: number,
+  heightMm: number,
+  frameMm: number,
+  offsetXMm: number,
+  offsetYMm: number,
+  hasHole: boolean,
+  holeDiameterMm: number,
+): number {
+  const cx = widthMm / 2 + offsetXMm
+  const cy = heightMm / 2 + offsetYMm
+  const maxW = 2 * Math.min(cx - frameMm, widthMm - frameMm - cx)
+  const maxH = 2 * Math.min(cy - frameMm, heightMm - frameMm - cy)
+  let maxC = Math.max(0, Math.min(maxW, maxH))
+  if (hasHole) {
+    const hole = dogtagHole(widthMm, heightMm, holeDiameterMm)
+    const clear = hole.diameter / 2 + 1.5
+    if (widthMm >= heightMm) {
+      maxC = Math.min(maxC, 2 * Math.max(0, cx - hole.cx - clear))
+    } else {
+      maxC = Math.min(maxC, 2 * Math.max(0, cy - hole.cy - clear))
+    }
+  }
+  return maxC
 }
 
 export function moduleOrigin(layout: Layout, row: number, col: number): { x: number; y: number } {
   return {
-    x: layout.matrixOriginMm + col * layout.moduleMm,
-    y: layout.matrixOriginMm + row * layout.moduleMm,
+    x: layout.matrixOriginX + col * layout.moduleMm,
+    y: layout.matrixOriginY + row * layout.moduleMm,
   }
 }
 
@@ -127,6 +308,6 @@ export function isReservedCell(matrixSize: number, row: number, col: number): bo
   return false
 }
 
-export function maxLogoPercent(matrixSize: number): number {
-  return Math.min(30, Math.floor(((matrixSize - 16) / matrixSize) * 100))
+export function maxLogoPercent(_matrixSize: number): number {
+  return 50
 }

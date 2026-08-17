@@ -3,7 +3,7 @@ import { encodeQr } from '../src/encode'
 import { makeLayout } from '../src/layout'
 import { applyLogoClear } from '../src/logo'
 import { decodeBedFace, renderBedFace } from '../src/scan'
-import type { QrStyle } from '../src/types'
+import type { PlateShape, QrStyle } from '../src/types'
 
 const content = 'https://example.com'
 const styles: QrStyle[] = ['square', 'rounded', 'dots']
@@ -39,6 +39,18 @@ describe('renderBedFace decode', () => {
         logoPercent: 20,
         pixels: 400,
       })
+      expect(decodeBedFace(image)).toBe(content)
+    })
+  }
+})
+
+describe('renderBedFace decode on tag shapes', () => {
+  const plates: PlateShape[] = ['circle', 'rounded', 'hexagon', 'rect', 'dogtag']
+  for (const plate of plates) {
+    it(`decodes a square module code on a ${plate} tag`, () => {
+      const matrix = encodeQr(content, false)
+      const layout = makeLayout(80, matrix.size, plate)
+      const image = renderBedFace({ matrix, layout, style: 'square', pixels: 500 })
       expect(decodeBedFace(image)).toBe(content)
     })
   }

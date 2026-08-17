@@ -8,7 +8,7 @@ export function createPreview(container: HTMLElement): {
   dispose(): void
 } {
   const scene = new THREE.Scene()
-  scene.background = new THREE.Color(0xfafafa)
+  scene.background = new THREE.Color(0xd8d8d8)
 
   const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 1000)
   const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -18,10 +18,11 @@ export function createPreview(container: HTMLElement): {
   const controls = new OrbitControls(camera, renderer.domElement)
   controls.enableDamping = true
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7))
-  const key = new THREE.DirectionalLight(0xffffff, 0.6)
-  key.position.set(40, 80, 60)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55))
+  const key = new THREE.DirectionalLight(0xffffff, 0.95)
   scene.add(key)
+  const fill = new THREE.DirectionalLight(0xffffff, 0.28)
+  scene.add(fill)
 
   let blackMesh: THREE.Mesh | null = null
   let whiteMesh: THREE.Mesh | null = null
@@ -63,14 +64,19 @@ export function createPreview(container: HTMLElement): {
     )
     scene.add(blackMesh)
     scene.add(whiteMesh)
-    const box = new THREE.Box3().setFromObject(scene)
+    const box = new THREE.Box3().setFromObject(blackMesh).union(new THREE.Box3().setFromObject(whiteMesh))
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
-    controls.target.copy(center)
+    const qrZ = box.min.z
     const span = Math.max(size.x, size.y, size.z, 1)
-    camera.position.set(center.x + span * 0.8, center.y - span * 0.8, center.z + span * 1.2)
-    camera.up.set(0, 0, 1)
-    camera.lookAt(center)
+    const target = new THREE.Vector3(center.x, center.y, qrZ)
+    // Print mesh stays face-down. View the QR from -Z so row 0 is at the top.
+    camera.up.set(0, -1, 0)
+    camera.position.set(center.x, center.y, qrZ - span * 1.35)
+    camera.lookAt(target)
+    controls.target.copy(target)
+    key.position.set(center.x + span * 0.35, center.y - span * 0.3, qrZ - span)
+    fill.position.set(center.x - span * 0.45, center.y + span * 0.4, qrZ - span * 0.35)
     controls.update()
   }
 

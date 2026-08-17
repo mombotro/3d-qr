@@ -1,7 +1,7 @@
 :root {
   color: #111;
   background: #fafafa;
-  font: 16px/1.5 system-ui, sans-serif;
+  font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 * {
@@ -55,6 +55,10 @@ input[type='number']:focus {
   border-bottom-width: 2px;
 }
 
+input:disabled {
+  opacity: 0.35;
+}
+
 .row {
   display: flex;
   gap: 1.5rem;
@@ -67,15 +71,21 @@ input[type='number']:focus {
 
 .choices {
   display: flex;
-  gap: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
 }
 
 .choices label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   text-transform: none;
   letter-spacing: 0;
   font-size: 1rem;
   color: #111;
   margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .preview-wrap {
@@ -136,4 +146,35 @@ ol li {
 
 .hint {
   margin: 0.75rem 0 0;
+}
+
+.fold {
+  margin-top: 0.75rem;
+}
+
+.fold summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #555;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.fold summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold summary::before {
+  content: '>';
+  font-family: inherit;
+  line-height: 1;
+}
+
+.fold[open] summary::before {
+  content: 'v';
 }

@@ -3,7 +3,7 @@ import type { QrMatrix } from './encode'
 import { isReservedCell, moduleOrigin, type Layout } from './layout'
 import { logoClearRect, maskToPolygons } from './logo'
 import { pointInPolygon } from './offset'
-import { frameRing, modulePoly, type Polygon } from './shapes'
+import { modulePoly, plateFrameAt, type Polygon } from './shapes'
 import type { QrStyle } from './types'
 
 export type Raster = {
@@ -60,8 +60,8 @@ export function renderBedFace(args: {
 }): Raster {
   const { matrix, layout, style, pixels } = args
   const image = makeImage(pixels, 255)
-  const scale = pixels / layout.widthMm
-  const frame = frameRing(layout.widthMm, layout.frameMm)
+  const scale = pixels / Math.max(layout.widthMm, layout.heightMm)
+  const frame = plateFrameAt(layout.shape, layout.widthMm, layout.heightMm, layout.frameMm)
   fillPoly(image, frame.outer, scale, 0)
   fillPoly(image, frame.hole, scale, 255)
   for (let r = 0; r < matrix.size; r++) {
