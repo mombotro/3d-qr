@@ -18,6 +18,26 @@ body {
   padding: 3rem 1.5rem 6rem;
 }
 
+.home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #555;
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin: 0 0 1.25rem;
+}
+
+.home:hover {
+  color: #111;
+}
+
+.home img {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
 h1 {
   font-size: 1.25rem;
   font-weight: 500;

@@ -102,7 +102,12 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 export function mountApp(root: HTMLElement): void {
+  const chickenSrc = `${import.meta.env.BASE_URL}chicken.jpg`
   root.innerHTML = `
+    <a class="home" href="https://boccbo.cc">
+      <img src="${chickenSrc}" alt="" width="16" height="16" />
+      mombotro
+    </a>
     <h1>3D QR</h1>
 
     <section>
