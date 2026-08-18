@@ -17,13 +17,16 @@ import { dogtagHole, modulePoly, plateFrameAt, plateOutlineAt, type Polygon } fr
 import {
   CASSETTE_ASPECT,
   CASSETTE_HEAD_STRIP_RAISE_MM,
-  CASSETTE_HEIGHT_MM,
-  CASSETTE_WIDTH_MM,
+  CASSETTE_LIP_H_MM,
+  CASSETTE_PLATE_T_MM,
+  CASSETTE_WINDOW_DEPTH_MM,
+  cassetteCornerHoles,
   cassetteHeadStrip,
+  cassetteLipPoly,
   cassettePlate,
 } from './cassette'
 import type { CassetteKit } from './cassetteParts'
-import { originPins, stampPockets } from './mesh'
+import { meshBBox, originPins, translateMesh } from './mesh'
 import { customPlateHeightMm } from './validate'
 import { GAP_MM, LID_THICKNESS_MM, WALL_THICKNESS_MM, type QrSettings } from './types'
 
@@ -187,14 +190,22 @@ export function buildBodies(
 
   const throughHoles = [...svgHoles, ...(tagHole ? [tagHole.poly] : [])]
   if (settings.plateShape === 'cassette' && cassette) {
-    const white = stampPockets(
-      cassette.top,
+    const pins = settings.cassetteLid ? cassetteCornerHoles() : []
+    const white = cassetteSolidPlate(
       outline,
-      throughHoles,
+      [...throughHoles, ...pins],
       grownModules,
+      cassetteHeadStrip(layout.widthMm, layout.heightMm),
       settings.blackHeightMm,
+      settings.cassetteLid,
     )
-    const blackPinned = [...black, ...originPins(CASSETTE_WIDTH_MM, CASSETTE_HEIGHT_MM)]
+    const box = meshBBox(white)
+    const whiteOnOrigin = translateMesh(white, -box.minX, -box.minY, -box.minZ)
+    const placed = meshBBox(whiteOnOrigin)
+    const blackPinned = [
+      ...translateMesh(black, -box.minX, -box.minY, -box.minZ),
+      ...originPins(placed.maxX, placed.maxY),
+    ]
     const extras: ExtraStl[] = []
     if (cassette.bottom.length) {
       extras.push({ filename: 'cassette-bottom.stl', triangles: cassette.bottom })
@@ -205,7 +216,7 @@ export function buildBodies(
     if (cassette.access.length) {
       extras.push({ filename: 'cassette-window.stl', triangles: cassette.access })
     }
-    return { black: blackPinned, white, lid: [], extras }
+    return { black: blackPinned, white: whiteOnOrigin, lid: [], extras }
   }
 
   const zFloor = settings.blackHeightMm
@@ -239,6 +250,62 @@ function clipPieces(geom: MultiPolygon): { outer: Polygon; holes: Polygon[] }[] 
     out.push({ outer: fromRing(poly[0]), holes: poly.slice(1).map(fromRing) })
   }
   return out
+}
+
+function cassetteSolidPlate(
+  outline: Polygon,
+  throughHoles: Polygon[],
+  qrPockets: Polygon[],
+  windowPocket: Polygon,
+  zQr: number,
+  withLip: boolean,
+): Triangle[] {
+  const z0 = 0
+  const zTop = CASSETTE_PLATE_T_MM
+  const zWin = Math.max(zQr, CASSETTE_WINDOW_DEPTH_MM)
+  const clips: ClipPolygon[] = [
+    ...throughHoles.map((h) => [toRing(h)]),
+    ...qrPockets.map((p) => [toRing(p)]),
+    [toRing(windowPocket)],
+  ]
+  const fill = difference([toRing(outline)], ...unionMany(clips))
+  const tris: Triangle[] = []
+  for (const piece of clipPieces(fill)) {
+    tris.push(...capFaces(piece.outer, piece.holes, z0, false))
+    tris.push(...ringWalls(piece.outer, z0, zQr, true))
+    for (const hole of piece.holes) {
+      tris.push(...ringWalls(hole, z0, zQr, false))
+    }
+  }
+  if (qrPockets.length) {
+    const qrCeil = difference(
+      unionMany(qrPockets.map((p) => [toRing(p)])),
+      ...throughHoles.map((h) => [toRing(h)]),
+    )
+    for (const piece of clipPieces(qrCeil)) {
+      tris.push(...capFaces(piece.outer, piece.holes, zQr, false))
+    }
+  }
+  if (zWin > zQr + 1e-6) {
+    tris.push(...ringWalls(windowPocket, zQr, zWin, false))
+    const winCeil = difference([toRing(windowPocket)], ...throughHoles.map((h) => [toRing(h)]))
+    for (const piece of clipPieces(winCeil)) {
+      tris.push(...capFaces(piece.outer, piece.holes, zWin, false))
+    }
+  }
+  const lip = withLip ? cassetteLipPoly() : null
+  if (lip) {
+    tris.push(...capFaces(outline, [...throughHoles, lip], zTop, true))
+    tris.push(...capFaces(lip, throughHoles, zTop + CASSETTE_LIP_H_MM, true))
+    tris.push(...ringWalls(lip, zTop, zTop + CASSETTE_LIP_H_MM, true))
+  } else {
+    tris.push(...capFaces(outline, throughHoles, zTop, true))
+  }
+  tris.push(...ringWalls(outline, zQr, zTop, true))
+  for (const hole of throughHoles) {
+    tris.push(...ringWalls(hole, zQr, zTop, false))
+  }
+  return tris
 }
 
 function whiteSolid(

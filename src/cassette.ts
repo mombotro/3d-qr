@@ -8,6 +8,11 @@ export const CASSETTE_ASPECT = CASSETTE_HEIGHT_MM / CASSETTE_WIDTH_MM
 export const CASSETTE_DEFAULT_WIDTH_MM = CASSETTE_WIDTH_MM
 export const CASSETTE_DEFAULT_HEIGHT_MM = CASSETTE_HEIGHT_MM
 export const CASSETTE_QR_FACE_Z = 2
+export const CASSETTE_PLATE_T_MM = 2
+export const CASSETTE_LIP_H_MM = 0.676
+export const CASSETTE_LIP_INSET_X_MM = 4.05
+export const CASSETTE_LIP_INSET_Y_MM = 2.65
+export const CASSETTE_WINDOW_DEPTH_MM = 1
 export const CASSETTE_HEAD_STRIP_RAISE_MM = 1
 export const CASSETTE_HEAD_STRIP_WIDTH_RATIO = 0.75
 export const CASSETTE_HEAD_STRIP_HEIGHT_RATIO = 0.18
@@ -43,6 +48,22 @@ export function cassettePlate(): CustomPlate {
     mask: [[true]],
     pixelBBox: { minX: 0, minY: 0, maxX: CASSETTE_WIDTH_MM, maxY: CASSETTE_HEIGHT_MM },
   }
+}
+
+export function cassetteLipPoly(): Polygon {
+  return roundedRectPoly(
+    CASSETTE_LIP_INSET_X_MM,
+    CASSETTE_LIP_INSET_Y_MM,
+    CASSETTE_WIDTH_MM - 2 * CASSETTE_LIP_INSET_X_MM,
+    CASSETTE_HEIGHT_MM - 2 * CASSETTE_LIP_INSET_Y_MM,
+    Math.max(0, CASSETTE_CORNER_RATIO * CASSETTE_WIDTH_MM - 2),
+  )
+}
+
+export function cassetteCornerHoles(): Polygon[] {
+  return CASSETTE_CORNER_HOLES_CAD_MM.map((h) =>
+    circlePoly(h.x, CASSETTE_HEIGHT_MM - h.y, CASSETTE_CORNER_PLUG_D_MM, 16),
+  )
 }
 
 export function cassetteHeadStrip(widthMm: number, heightMm: number): Polygon {
