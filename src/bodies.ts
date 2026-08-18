@@ -187,7 +187,13 @@ export function buildBodies(
 
   const throughHoles = [...svgHoles, ...(tagHole ? [tagHole.poly] : [])]
   if (settings.plateShape === 'cassette' && cassette) {
-    const white = stampPockets(cassette.top, grownModules, settings.blackHeightMm)
+    const white = stampPockets(
+      cassette.top,
+      outline,
+      throughHoles,
+      grownModules,
+      settings.blackHeightMm,
+    )
     const blackPinned = [...black, ...originPins(CASSETTE_WIDTH_MM, CASSETTE_HEIGHT_MM)]
     const extras: ExtraStl[] = []
     if (cassette.bottom.length) {

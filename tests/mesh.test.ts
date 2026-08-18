@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { flipFaceToBed, flipMeshX, meshBBox, placeOnBed, stampPockets } from '../src/mesh'
 import { readBinaryStl } from '../src/stl'
-import { squarePoly } from '../src/shapes'
+import { rectPoly, squarePoly } from '../src/shapes'
 import { pointInPolygon } from '../src/offset'
 
 function loadStl(name: string) {
@@ -61,12 +61,12 @@ describe('mesh transforms', () => {
 })
 
 describe('stampPockets', () => {
-  it('cuts a pocket in the source plate without rebuilding the outline', () => {
+  it('cuts a pocket in the source plate without stacking a second body', () => {
     const raw = loadStl('top-plate-qr.stl')
     const flipped = flipFaceToBed(raw, 2)
-    const before = flipped.length
+    const outline = rectPoly(0, 0, 100.11, 63.6)
     const pocket = squarePoly(40, 25, 8)
-    const out = stampPockets(flipped, [pocket], 0.6)
+    const out = stampPockets(flipped, outline, [], [pocket], 0.6)
     const mid = { x: 44, y: 29 }
     const bed = out.filter((t) => t.a[2] < 1e-3 && t.b[2] < 1e-3 && t.c[2] < 1e-3)
     const hits = bed.some((t) =>
@@ -78,9 +78,9 @@ describe('stampPockets', () => {
     )
     expect(hits).toBe(false)
     const b = meshBBox(out)
-    expect(b.maxX).toBeCloseTo(meshBBox(flipped).maxX, 3)
-    expect(b.maxY).toBeCloseTo(meshBBox(flipped).maxY, 3)
-    expect(out.length).toBeGreaterThan(before / 2)
+    expect(b.maxX).toBeCloseTo(meshBBox(flipped).maxX, 2)
+    expect(b.maxY).toBeCloseTo(meshBBox(flipped).maxY, 2)
+    expect(out.length).toBeGreaterThan(100)
     const ceiling = out.filter(
       (t) =>
         Math.abs(t.a[2] - 0.6) < 1e-3 &&

@@ -136,45 +136,35 @@ function fromClip(ring: number[][]): Polygon {
 }
 
 /**
- * Keep the source mesh. Cut module pockets into the QR face only.
- * Does not rebuild the plate from a 2D outline.
+ * Drop the original QR face and rebuild it once: plate minus holes minus modules.
+ * Keeps the rest of the CAD mesh so the body is not stacked twice.
  */
-export function stampPockets(tris: Triangle[], pockets: Polygon[], depth: number): Triangle[] {
-  if (depth <= EPS || pockets.length === 0) return tris
+export function stampPockets(
+  tris: Triangle[],
+  outline: Polygon,
+  throughHoles: Polygon[],
+  pockets: Polygon[],
+  depth: number,
+): Triangle[] {
+  const rest = tris.filter((t) => !isQrFace(t))
+  if (depth <= EPS || outline.length < 3) return rest
+  const cuts = [...throughHoles, ...pockets].filter((p) => p.length >= 3)
+  const plate = toClip(outline)
+  const fill =
+    cuts.length === 0
+      ? [plate]
+      : difference(
+          plate,
+          cuts.length === 1 ? toClip(cuts[0]) : union(toClip(cuts[0]), ...cuts.slice(1).map(toClip)),
+        )
   const face: Triangle[] = []
-  const rest: Triangle[] = []
-  for (const t of tris) {
-    if (isQrFace(t)) face.push(t)
-    else rest.push(t)
-  }
-  const pocketGeoms = pockets.filter((p) => p.length >= 3).map(toClip)
-  if (pocketGeoms.length === 0) return tris
-  const cutter =
-    pocketGeoms.length === 1 ? pocketGeoms[0] : union(pocketGeoms[0], ...pocketGeoms.slice(1))
-  const keptFace: Triangle[] = []
-  for (const t of face) {
-    const tri: ClipPolygon = [
-      [
-        [t.a[0], t.a[1]],
-        [t.b[0], t.b[1]],
-        [t.c[0], t.c[1]],
-        [t.a[0], t.a[1]],
-      ],
-    ]
-    const leftover = difference(tri, cutter)
-    for (const poly of leftover) {
-      if (!poly[0] || poly[0].length < 3) continue
-      keptFace.push(
-        ...capFaces(
-          fromClip(poly[0]),
-          poly.slice(1).map(fromClip),
-          0,
-          false,
-        ),
-      )
-    }
+  for (const poly of fill) {
+    if (!poly[0] || poly[0].length < 3) continue
+    face.push(
+      ...capFaces(fromClip(poly[0]), poly.slice(1).map(fromClip), 0, false),
+    )
   }
   const walls = pockets.flatMap((p) => ringWalls(p, 0, depth, false))
   const ceilings = pockets.flatMap((p) => capFaces(p, [], depth, false))
-  return [...rest, ...keptFace, ...walls, ...ceilings]
+  return [...rest, ...face, ...walls, ...ceilings]
 }
