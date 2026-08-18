@@ -9,7 +9,7 @@ import {
 import type { CustomPlate } from './contour'
 import { customFrame, scaleCustomPlate } from './contour'
 import type { QrMatrix } from './encode'
-import { capFaces, extrudeRing, ringWalls, type Triangle } from './extrude'
+import { capFaces, extrudeRing, ringWalls, ringWallsWhere, type Triangle } from './extrude'
 import { isReservedCell, makeLayout, moduleOrigin } from './layout'
 import { applyLogoClear, logoClearRect, maskToPolygons } from './logo'
 import { insetPolygon, offsetPolygon } from './offset'
@@ -20,6 +20,8 @@ import {
   CASSETTE_LIP_H_MM,
   CASSETTE_PLATE_T_MM,
   CASSETTE_WINDOW_DEPTH_MM,
+  CASSETTE_HEIGHT_MM,
+  cassetteChannelPoly,
   cassetteCornerHoles,
   cassetteHeadStrip,
   cassetteLipPoly,
@@ -195,7 +197,7 @@ export function buildBodies(
       outline,
       [...throughHoles, ...pins],
       grownModules,
-      cassetteHeadStrip(layout.widthMm, layout.heightMm),
+      cassetteChannelPoly(),
       settings.blackHeightMm,
       settings.cassetteLid,
       subtractFrame,
@@ -294,8 +296,15 @@ function cassetteSolidPlate(
     tris.push(...capFaces(frame.outer, [frame.hole, ...throughHoles], zQr, false))
   }
   if (window && zWin > zQr + 1e-6) {
-    tris.push(...ringWalls(window, zQr, zWin, false))
+    const headY = CASSETTE_HEIGHT_MM
+    const notMouth = (a: { y: number }, b: { y: number }) =>
+      !(Math.abs(a.y - headY) < 0.3 && Math.abs(b.y - headY) < 0.3)
+    tris.push(...ringWallsWhere(window, zQr, zWin, false, notMouth))
     tris.push(...capFaces(window, [], zWin, false))
+    tris.push(...ringWallsWhere(outline, zQr, zWin, true, notMouth))
+    tris.push(...ringWalls(outline, zWin, zTop, true))
+  } else {
+    tris.push(...ringWalls(outline, zQr, zTop, true))
   }
   const lip = withLip ? cassetteLipPoly() : null
   if (lip) {
@@ -305,7 +314,6 @@ function cassetteSolidPlate(
   } else {
     tris.push(...capFaces(outline, throughHoles, zTop, true))
   }
-  tris.push(...ringWalls(outline, zQr, zTop, true))
   for (const hole of throughHoles) {
     tris.push(...ringWalls(hole, zQr, zTop, false))
   }

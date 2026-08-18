@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   CASSETTE_ASPECT,
+  CASSETTE_CHANNEL_INNER_Y_MM,
   CASSETTE_HEAD_STRIP_RAISE_MM,
+  cassetteChannelPoly,
   cassetteHeadStrip,
   cassettePlate,
 } from '../src/cassette'
@@ -34,6 +36,18 @@ describe('cassettePlate', () => {
     expect(inHole({ x: 0.5, y: (63.6 - 14.78) / w })).toBe(false)
     expect(pointInPolygon({ x: 0.5, y: plate.aspect / 2 }, plate.outer)).toBe(true)
     expect(inHole({ x: 0.5, y: plate.aspect / 2 })).toBe(false)
+  })
+})
+
+describe('cassetteChannelPoly', () => {
+  it('opens on the head edge like top-plate-qr.stl', () => {
+    const ch = cassetteChannelPoly()
+    const ys = ch.map((p) => p.y)
+    const xs = ch.map((p) => p.x)
+    expect(Math.max(...ys)).toBeCloseTo(63.6)
+    expect(Math.min(...ys)).toBeCloseTo(CASSETTE_CHANNEL_INNER_Y_MM)
+    expect(Math.min(...xs)).toBeCloseTo(15)
+    expect(Math.max(...xs)).toBeCloseTo(85.11)
   })
 })
 

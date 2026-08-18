@@ -65,6 +65,24 @@ export function cassetteCornerHoles(): Polygon[] {
   )
 }
 
+/** Head-edge channel from top-plate-qr.stl, in print space (head at max Y). */
+export const CASSETTE_CHANNEL_INNER_Y_MM = CASSETTE_HEIGHT_MM - 15.45
+export const CASSETTE_CHANNEL_X0_MM = 15
+export const CASSETTE_CHANNEL_X1_MM = 85.11
+export const CASSETTE_CHANNEL_X_INNER0_MM = 18.75
+export const CASSETTE_CHANNEL_X_INNER1_MM = 81.35
+
+export function cassetteChannelPoly(): Polygon {
+  const yEdge = CASSETTE_HEIGHT_MM
+  const yInner = CASSETTE_CHANNEL_INNER_Y_MM
+  return [
+    { x: CASSETTE_CHANNEL_X0_MM, y: yEdge },
+    { x: CASSETTE_CHANNEL_X1_MM, y: yEdge },
+    { x: CASSETTE_CHANNEL_X_INNER1_MM, y: yInner },
+    { x: CASSETTE_CHANNEL_X_INNER0_MM, y: yInner },
+  ]
+}
+
 export function cassetteHeadStrip(widthMm: number, heightMm: number): Polygon {
   const w = widthMm * CASSETTE_HEAD_STRIP_WIDTH_RATIO
   const h = heightMm * CASSETTE_HEAD_STRIP_HEIGHT_RATIO

@@ -61,10 +61,21 @@ function wall(
 }
 
 export function ringWalls(ring: Polygon, z0: number, z1: number, outward: boolean): Triangle[] {
+  return ringWallsWhere(ring, z0, z1, outward, () => true)
+}
+
+export function ringWallsWhere(
+  ring: Polygon,
+  z0: number,
+  z1: number,
+  outward: boolean,
+  keep: (a: Polygon[number], b: Polygon[number]) => boolean,
+): Triangle[] {
   const out: Triangle[] = []
   for (let i = 0; i < ring.length; i++) {
     const a = ring[i]
     const b = ring[(i + 1) % ring.length]
+    if (!keep(a, b)) continue
     out.push(...wall(a.x, a.y, b.x, b.y, z0, z1, outward))
   }
   return out
