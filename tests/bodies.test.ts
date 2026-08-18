@@ -99,6 +99,28 @@ describe('buildBodies', () => {
     expect(w.minY).toBeCloseTo(0)
   })
 
+  it('gives black and white the same XY box so Cura can center them together', () => {
+    const { black, white } = buildBodies(settings, matrix)
+    let bMaxX = -Infinity
+    let bMaxY = -Infinity
+    let wMaxX = -Infinity
+    let wMaxY = -Infinity
+    for (const t of black) {
+      for (const v of [t.a, t.b, t.c]) {
+        bMaxX = Math.max(bMaxX, v[0])
+        bMaxY = Math.max(bMaxY, v[1])
+      }
+    }
+    for (const t of white) {
+      for (const v of [t.a, t.b, t.c]) {
+        wMaxX = Math.max(wMaxX, v[0])
+        wMaxY = Math.max(wMaxY, v[1])
+      }
+    }
+    expect(bMaxX).toBeCloseTo(wMaxX, 3)
+    expect(bMaxY).toBeCloseTo(wMaxY, 3)
+  })
+
   it('leaves a 0.20 mm gap around a square data module', () => {
     const square = clampSettings({ ...settings, style: 'square' })
     const { black, white } = buildBodies(square, matrix)

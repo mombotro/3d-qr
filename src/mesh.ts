@@ -76,9 +76,12 @@ export function placeOnBed(tris: Triangle[]): Triangle[] {
   return translateMesh(tris, -b.minX, -b.minY, -b.minZ)
 }
 
-/** Tiny pads at opposite plate corners so two STLs share one XY origin. */
-export function originPins(widthMm: number, heightMm: number, heightZ = 0.05): Triangle[] {
-  const s = 0.2
+/**
+ * Pads at all four AABB corners so Cura and Orca see the same box.
+ * Cura recenters each file on its bounding box and may drop 0.2 mm specks.
+ */
+export function originPins(widthMm: number, heightMm: number, heightZ = 0.2): Triangle[] {
+  const s = 1
   const pin = (x: number, y: number) =>
     extrudeRing(
       [
@@ -91,7 +94,28 @@ export function originPins(widthMm: number, heightMm: number, heightZ = 0.05): T
       0,
       heightZ,
     )
-  return [...pin(0, 0), ...pin(widthMm - s, heightMm - s)]
+  return [
+    ...pin(0, 0),
+    ...pin(widthMm - s, 0),
+    ...pin(0, heightMm - s),
+    ...pin(widthMm - s, heightMm - s),
+  ]
+}
+
+/** Shift both meshes to the plate min corner and pin the same XY box on each. */
+export function alignExportOrigin(
+  black: Triangle[],
+  white: Triangle[],
+): { black: Triangle[]; white: Triangle[] } {
+  const box = meshBBox(white)
+  const whiteOnOrigin = translateMesh(white, -box.minX, -box.minY, -box.minZ)
+  const blackOnOrigin = translateMesh(black, -box.minX, -box.minY, -box.minZ)
+  const placed = meshBBox(whiteOnOrigin)
+  const pins = originPins(placed.maxX, placed.maxY)
+  return {
+    black: [...blackOnOrigin, ...pins],
+    white: whiteOnOrigin,
+  }
 }
 
 /** Mirror X around a center. */

@@ -18,6 +18,7 @@ describe('PRINT_HELP_STEPS', () => {
 
   it('still states that both files share an origin', () => {
     expect(PRINT_HELP_ORIGIN).toMatch(/origin/i)
+    expect(PRINT_HELP_ORIGIN).toMatch(/Cura/)
   })
 
   it('has cassette steps for the top plate, shell, and slider', () => {

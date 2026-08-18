@@ -30,7 +30,7 @@ import {
 } from './cassette'
 import type { CassetteKit } from './cassetteParts'
 import { maskToPlacedShapes, textToShapes } from './text'
-import { meshBBox, originPins, translateMesh } from './mesh'
+import { alignExportOrigin } from './mesh'
 import { customPlateHeightMm } from './validate'
 import { GAP_MM, LID_THICKNESS_MM, WALL_THICKNESS_MM, type QrSettings } from './types'
 
@@ -245,13 +245,9 @@ export function buildBodies(
       faceWells,
       stampClips,
     )
-    const box = meshBBox(white)
-    const whiteOnOrigin = translateMesh(white, -box.minX, -box.minY, -box.minZ)
-    const placed = meshBBox(whiteOnOrigin)
-    const blackPinned = [
-      ...translateMesh(black, -box.minX, -box.minY, -box.minZ),
-      ...originPins(placed.maxX, placed.maxY),
-    ]
+    const aligned = alignExportOrigin(black, white)
+    const whiteOnOrigin = aligned.white
+    const blackPinned = aligned.black
     const extras: ExtraStl[] = []
     if (cassette.bottom.length) {
       extras.push({ filename: 'cassette-bottom.stl', triangles: cassette.bottom })
@@ -279,8 +275,9 @@ export function buildBodies(
     : whiteSolid(outline, fill, throughHoles, 0, zFloor, zTop, raised)
 
   const lid = settings.lid ? extrudeRing(outline, throughHoles, 0, LID_THICKNESS_MM) : []
+  const aligned = alignExportOrigin(black, white)
 
-  return { black, white, lid, extras: [] }
+  return { black: aligned.black, white: aligned.white, lid, extras: [] }
 }
 
 function unionMany(geoms: ClipPolygon[]): MultiPolygon {

@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { flipFaceToBed, flipMeshX, meshBBox, placeOnBed, stampPockets } from '../src/mesh'
+import {
+  alignExportOrigin,
+  flipFaceToBed,
+  flipMeshX,
+  meshBBox,
+  originPins,
+  placeOnBed,
+  stampPockets,
+} from '../src/mesh'
 import { readBinaryStl } from '../src/stl'
 import { rectPoly, squarePoly } from '../src/shapes'
 import { pointInPolygon } from '../src/offset'
@@ -57,6 +65,30 @@ describe('mesh transforms', () => {
     expect(b.minZ).toBeCloseTo(0, 5)
     expect(b.maxX).toBeCloseTo(100.11, 2)
     expect(b.maxY).toBeCloseTo(63.6, 2)
+  })
+})
+
+describe('originPins', () => {
+  it('puts a pad in each AABB corner', () => {
+    const pins = originPins(80, 50)
+    const box = meshBBox(pins)
+    expect(box.minX).toBeCloseTo(0)
+    expect(box.minY).toBeCloseTo(0)
+    expect(box.maxX).toBeCloseTo(80)
+    expect(box.maxY).toBeCloseTo(50)
+    expect(box.maxZ).toBeCloseTo(0.2)
+  })
+
+  it('aligns a small black mesh to a larger white plate box', () => {
+    const white = originPins(80, 50)
+    const black = originPins(10, 10)
+    const aligned = alignExportOrigin(black, white)
+    const b = meshBBox(aligned.black)
+    const w = meshBBox(aligned.white)
+    expect(b.minX).toBeCloseTo(w.minX)
+    expect(b.minY).toBeCloseTo(w.minY)
+    expect(b.maxX).toBeCloseTo(w.maxX)
+    expect(b.maxY).toBeCloseTo(w.maxY)
   })
 })
 
