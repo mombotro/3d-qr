@@ -51,6 +51,34 @@ export function insetPolygon(poly: Polygon, insetMm: number): Polygon {
   return offsetPolygon(poly, delta)
 }
 
+/** Drop duplicate and collinear vertices so caps and walls share the same edges. */
+export function cleanRing(poly: Polygon, eps = 1e-4): Polygon {
+  if (poly.length < 3) return poly.map((p) => ({ ...p }))
+  const dedup: Polygon = []
+  for (const p of poly) {
+    const last = dedup[dedup.length - 1]
+    if (last && Math.hypot(p.x - last.x, p.y - last.y) < eps) continue
+    dedup.push({ x: p.x, y: p.y })
+  }
+  if (dedup.length > 1) {
+    const a = dedup[0]
+    const b = dedup[dedup.length - 1]
+    if (a && b && Math.hypot(a.x - b.x, a.y - b.y) < eps) dedup.pop()
+  }
+  if (dedup.length < 3) return dedup
+  const out: Polygon = []
+  for (let i = 0; i < dedup.length; i++) {
+    const prev = dedup[(i - 1 + dedup.length) % dedup.length]
+    const curr = dedup[i]
+    const next = dedup[(i + 1) % dedup.length]
+    if (!prev || !curr || !next) continue
+    const cross = (curr.x - prev.x) * (next.y - prev.y) - (curr.y - prev.y) * (next.x - prev.x)
+    const span = Math.hypot(next.x - prev.x, next.y - prev.y) || 1
+    if (Math.abs(cross) / span > eps) out.push(curr)
+  }
+  return out.length >= 3 ? out : dedup
+}
+
 export function offsetPolygon(poly: Polygon, delta: number): Polygon {
   if (poly.length < 3 || delta === 0) return poly.map((p) => ({ ...p }))
   const n = poly.length

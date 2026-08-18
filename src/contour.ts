@@ -180,6 +180,77 @@ export function maskToCustomPlate(mask: boolean[][]): CustomPlate | null {
   return normalize(outer, holes, component)
 }
 
+export type MaskShape = {
+  outer: Polygon
+  holes: Polygon[]
+}
+
+/** Trace every dark blob, including letter holes. Coordinates are in mask pixels. */
+export function maskToShapes(mask: boolean[][]): MaskShape[] {
+  const rows = mask.length
+  const cols = mask[0]?.length ?? 0
+  if (rows === 0 || cols === 0) return []
+  const padded: boolean[][] = Array.from({ length: rows + 2 }, (_, y) =>
+    Array.from({ length: cols + 2 }, (_, x) =>
+      y > 0 && x > 0 && y <= rows && x <= cols ? Boolean(mask[y - 1]?.[x - 1]) : false,
+    ),
+  )
+  const background = padded.map((row) => row.map(() => false))
+  flood(padded, 0, 0, false, background)
+  const seen = padded.map((row) => row.map(() => false))
+  const shapes: MaskShape[] = []
+  for (let y = 0; y < padded.length; y++) {
+    for (let x = 0; x < (padded[0]?.length ?? 0); x++) {
+      if (!padded[y]?.[x] || seen[y]?.[x]) continue
+      const component = padded.map((row) => row.map(() => false))
+      flood(padded, x, y, true, component)
+      let seed: { x: number; y: number } | null = null
+      for (let yy = 0; yy < component.length; yy++) {
+        for (let xx = 0; xx < (component[0]?.length ?? 0); xx++) {
+          if (!component[yy]?.[xx]) continue
+          if (seen[yy]) seen[yy][xx] = true
+          if (!seed) seed = { x: xx, y: yy }
+        }
+      }
+      if (!seed) continue
+      const outer = trace(component, seed.x, seed.y)
+      if (outer.length < 3) continue
+      const holes: Polygon[] = []
+      const holeSeen = padded.map((row) => row.map(() => false))
+      for (let yy = 0; yy < padded.length; yy++) {
+        for (let xx = 0; xx < (padded[0]?.length ?? 0); xx++) {
+          if (padded[yy]?.[xx] || background[yy]?.[xx] || holeSeen[yy]?.[xx]) continue
+          if (!touches(component, xx, yy)) continue
+          const mark = padded.map((row) => row.map(() => false))
+          flood(padded, xx, yy, false, mark)
+          let holeSeed: { x: number; y: number } | null = null
+          for (let hy = 0; hy < mark.length; hy++) {
+            for (let hx = 0; hx < (mark[0]?.length ?? 0); hx++) {
+              if (!mark[hy]?.[hx]) continue
+              if (holeSeen[hy]) holeSeen[hy][hx] = true
+              if (!holeSeed) holeSeed = { x: hx, y: hy }
+            }
+          }
+          if (!holeSeed) continue
+          const ring = trace(mark, holeSeed.x, holeSeed.y)
+          if (ring.length >= 3) holes.push(ring)
+        }
+      }
+      shapes.push({ outer, holes })
+    }
+  }
+  return shapes
+}
+
+function touches(mask: boolean[][], x: number, y: number): boolean {
+  return (
+    Boolean(mask[y]?.[x - 1]) ||
+    Boolean(mask[y]?.[x + 1]) ||
+    Boolean(mask[y - 1]?.[x]) ||
+    Boolean(mask[y + 1]?.[x])
+  )
+}
+
 export function scaleCustomPlate(plate: CustomPlate, widthMm: number): CustomPlate {
   const s = widthMm
   const eps = Math.max(0.15, widthMm * 0.002)

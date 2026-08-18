@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { customFrame, insetCustomOutline, maskToCustomPlate, scaleCustomPlate } from '../src/contour'
+import {
+  customFrame,
+  insetCustomOutline,
+  maskToCustomPlate,
+  maskToShapes,
+  scaleCustomPlate,
+} from '../src/contour'
 import { pointInPolygon } from '../src/offset'
 import { parseSvgSize, svgRasterSize } from '../src/svgSize'
 
@@ -33,6 +39,19 @@ describe('maskToCustomPlate', () => {
     const mid = { x: 0.5, y: plate!.aspect / 2 }
     expect(pointInPolygon(mid, plate!.outer)).toBe(true)
     expect(pointInPolygon(mid, plate!.holes[0])).toBe(true)
+  })
+})
+
+describe('maskToShapes', () => {
+  it('traces two separate blobs', () => {
+    const mask = Array.from({ length: 12 }, () => Array<boolean>(20).fill(false))
+    for (let y = 2; y < 8; y++) {
+      for (let x = 2; x < 6; x++) mask[y][x] = true
+      for (let x = 12; x < 16; x++) mask[y][x] = true
+    }
+    const shapes = maskToShapes(mask)
+    expect(shapes.length).toBe(2)
+    expect(shapes.every((s) => s.outer.length >= 3)).toBe(true)
   })
 })
 

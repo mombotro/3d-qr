@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { insetPolygon, offsetPolygon, pointInPolygon } from '../src/offset'
+import { cleanRing, insetPolygon, offsetPolygon, pointInPolygon } from '../src/offset'
 import { squarePoly } from '../src/shapes'
+
+describe('cleanRing', () => {
+  it('drops a collinear midpoint', () => {
+    const ring = cleanRing([
+      { x: 0, y: 0 },
+      { x: 5, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ])
+    expect(ring).toHaveLength(4)
+  })
+})
 
 describe('offsetPolygon', () => {
   it('grows a 10 mm square by 0.2 mm on each side', () => {

@@ -1,4 +1,5 @@
 import earcut from 'earcut'
+import { cleanRing, signedArea } from './offset'
 import type { Polygon } from './shapes'
 
 export type Triangle = {
@@ -82,8 +83,14 @@ export function ringWallsWhere(
 }
 
 export function capFaces(outer: Polygon, holes: Polygon[], z: number, up: boolean): Triangle[] {
-  if (outer.length < 3) return []
-  const { verts, holeStarts } = flatten(outer, holes)
+  const ring = cleanRing(outer)
+  const inner = holes.map((h) => cleanRing(h)).filter((h) => h.length >= 3)
+  if (signedArea(ring) < 0) ring.reverse()
+  for (const h of inner) {
+    if (signedArea(h) > 0) h.reverse()
+  }
+  if (ring.length < 3) return []
+  const { verts, holeStarts } = flatten(ring, inner)
   const index = earcut(verts, holeStarts.length ? holeStarts : undefined, 2)
   const tris: Triangle[] = []
   for (let i = 0; i < index.length; i += 3) {
@@ -99,11 +106,13 @@ export function capFaces(outer: Polygon, holes: Polygon[], z: number, up: boolea
 }
 
 export function extrudeRing(outer: Polygon, holes: Polygon[], z0: number, z1: number): Triangle[] {
+  const ring = cleanRing(outer)
+  const inner = holes.map((h) => cleanRing(h)).filter((h) => h.length >= 3)
   const tris: Triangle[] = []
-  tris.push(...capFaces(outer, holes, z1, true))
-  tris.push(...capFaces(outer, holes, z0, false))
-  tris.push(...ringWalls(outer, z0, z1, true))
-  for (const hole of holes) {
+  tris.push(...capFaces(ring, inner, z1, true))
+  tris.push(...capFaces(ring, inner, z0, false))
+  tris.push(...ringWalls(ring, z0, z1, true))
+  for (const hole of inner) {
     tris.push(...ringWalls(hole, z0, z1, false))
   }
   return tris

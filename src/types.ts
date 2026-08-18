@@ -35,6 +35,14 @@ export type QrSettings = {
   cassetteSlider: boolean
   cassetteFlipSlider: boolean
   cassetteAccess: boolean
+  blackText: string
+  blackTextFont: string
+  blackTextSizeMm: number
+  blackTextXMm: number
+  blackTextYMm: number
+  blackImageSizeMm: number
+  blackImageXMm: number
+  blackImageYMm: number
 }
 
 export const GAP_MM = 0.2
@@ -53,4 +61,6 @@ export const LIMITS = {
   holeDiameterMm: { min: 2, default: 4, max: 12 },
   qrSizePercent: { min: 40, default: 100, max: 200 },
   cassetteThicknessMm: { min: 1, default: 8, max: 8 },
+  blackTextSizeMm: { min: 2, default: 6, max: 40 },
+  blackImageSizeMm: { min: 2, default: 12, max: 60 },
 } as const

@@ -64,6 +64,31 @@ describe('buildBodies', () => {
     expect(white.length).toBeGreaterThan(0)
   })
 
+  it('stamps a black-layer image at the given origin', () => {
+    const tag = clampSettings({
+      ...settings,
+      insetFrame: false,
+      blackImageSizeMm: 8,
+      blackImageXMm: 2,
+      blackImageYMm: 2,
+    })
+    const mask = Array.from({ length: 8 }, () => Array<boolean>(8).fill(true))
+    const { black, white } = buildBodies(tag, matrix, undefined, null, null, mask)
+    const mid = { x: 6, y: 6 }
+    const atZ0 = (tris: typeof black) =>
+      tris.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (tris: typeof black, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    expect(covers(atZ0(black), mid)).toBe(true)
+    expect(covers(atZ0(white), mid)).toBe(false)
+  })
+
   it('shares origin at the plate min corner', () => {
     const { black, white } = buildBodies(settings, matrix)
     const b = xyOf(black)

@@ -1,5 +1,6 @@
 import { CARD_ASPECT, CARD_DEFAULT_WIDTH_MM } from './card'
 import { CASSETTE_ASPECT, CASSETTE_DEFAULT_WIDTH_MM, CASSETTE_WIDTH_MM } from './cassette'
+import { isTextFontId } from './text'
 import { LIMITS, type PlateShape, type QrSettings, type QrStyle } from './types'
 
 export { LIMITS, GAP_MM, FRAME_MODULES, QUIET_ZONE_MODULES } from './types'
@@ -94,6 +95,14 @@ export function defaultSettings(): QrSettings {
     cassetteSlider: true,
     cassetteFlipSlider: false,
     cassetteAccess: true,
+    blackText: '',
+    blackTextFont: 'sans',
+    blackTextSizeMm: LIMITS.blackTextSizeMm.default,
+    blackTextXMm: 4,
+    blackTextYMm: 4,
+    blackImageSizeMm: LIMITS.blackImageSizeMm.default,
+    blackImageXMm: 4,
+    blackImageYMm: 16,
   }
 }
 
@@ -186,5 +195,25 @@ export function clampSettings(raw: Partial<QrSettings>): QrSettings {
     cassetteSlider: raw.cassetteSlider ?? base.cassetteSlider,
     cassetteFlipSlider: raw.cassetteFlipSlider ?? base.cassetteFlipSlider,
     cassetteAccess: raw.cassetteAccess ?? base.cassetteAccess,
+    blackText: (raw.blackText ?? base.blackText).slice(0, 80),
+    blackTextFont: isTextFontId(raw.blackTextFont ?? '') ? raw.blackTextFont! : base.blackTextFont,
+    blackTextSizeMm: clampNumber(
+      raw.blackTextSizeMm ?? base.blackTextSizeMm,
+      LIMITS.blackTextSizeMm.min,
+      LIMITS.blackTextSizeMm.max,
+    ),
+    blackTextXMm: Number.isFinite(raw.blackTextXMm) ? (raw.blackTextXMm as number) : base.blackTextXMm,
+    blackTextYMm: Number.isFinite(raw.blackTextYMm) ? (raw.blackTextYMm as number) : base.blackTextYMm,
+    blackImageSizeMm: clampNumber(
+      raw.blackImageSizeMm ?? base.blackImageSizeMm,
+      LIMITS.blackImageSizeMm.min,
+      LIMITS.blackImageSizeMm.max,
+    ),
+    blackImageXMm: Number.isFinite(raw.blackImageXMm)
+      ? (raw.blackImageXMm as number)
+      : base.blackImageXMm,
+    blackImageYMm: Number.isFinite(raw.blackImageYMm)
+      ? (raw.blackImageYMm as number)
+      : base.blackImageYMm,
   }
 }

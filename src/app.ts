@@ -11,6 +11,7 @@ import { loadCassetteKit } from './cassetteParts'
 import { createPreview } from './preview'
 import type { Triangle } from './extrude'
 import { writeBinaryStl } from './stl'
+import { BLACK_TEXT_FONTS } from './text'
 import type { PlateShape, QrSettings, QrStyle } from './types'
 import { CARD_ASPECT, CARD_DEFAULT_WIDTH_MM } from './card'
 import { CASSETTE_ASPECT, CASSETTE_DEFAULT_WIDTH_MM } from './cassette'
@@ -108,6 +109,8 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 export function mountApp(root: HTMLElement): void {
   const chickenSrc = `${import.meta.env.BASE_URL}chicken.jpg`
   root.innerHTML = `
+    <div class="app-shell">
+    <div class="settings">
     <a class="home" href="https://boccbo.cc">
       <img src="${chickenSrc}" alt="" width="16" height="16" />
       mombotro
@@ -222,6 +225,59 @@ export function mountApp(root: HTMLElement): void {
     </section>
 
     <section>
+      <div class="section-label">Text</div>
+      <label for="blackText">Black layer text</label>
+      <input id="blackText" type="text" maxlength="80" placeholder="optional" autocomplete="off" />
+      <div class="row" style="margin-top:1rem">
+        <div>
+          <label for="textFont">Font</label>
+          <select id="textFont">
+            ${BLACK_TEXT_FONTS.map((f) => `<option value="${f.id}">${f.label}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label for="textSize">Size mm</label>
+          <input id="textSize" type="number" step="0.5" min="2" max="40" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:1rem">
+        <div>
+          <label for="textX">Text X mm</label>
+          <input id="textX" type="number" step="1" />
+        </div>
+        <div>
+          <label for="textY">Text Y mm</label>
+          <input id="textY" type="number" step="1" />
+        </div>
+      </div>
+      <p class="hint">From the plate origin. Y increases up in the preview.</p>
+    </section>
+
+    <section>
+      <div class="section-label">Image</div>
+      <label for="stamp">Black layer image</label>
+      <input id="stamp" type="file" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" />
+      <div class="row" style="margin-top:1rem">
+        <div>
+          <label for="stampSize">Size mm</label>
+          <input id="stampSize" type="number" step="0.5" min="2" max="60" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:1rem">
+        <div>
+          <label for="stampX">Image X mm</label>
+          <input id="stampX" type="number" step="1" />
+        </div>
+        <div>
+          <label for="stampY">Image Y mm</label>
+          <input id="stampY" type="number" step="1" />
+        </div>
+      </div>
+      <p class="hint">Same origin as text. Y increases up. Dark pixels become black plastic.</p>
+      <p class="error" id="stampError"></p>
+    </section>
+
+    <section>
       <div class="section-label">Logo</div>
       <input id="logo" type="file" accept=".svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg" />
       <div class="toggles">
@@ -232,16 +288,6 @@ export function mountApp(root: HTMLElement): void {
         <input id="logoSize" type="number" min="10" max="50" step="1" />
       </div>
       <p class="error" id="logoError"></p>
-    </section>
-
-    <section>
-      <div class="section-label">Preview</div>
-      <div class="preview-wrap" id="preview"></div>
-      <div class="toggles">
-        <label><input id="showBlack" type="checkbox" checked /> show black</label>
-        <label><input id="showWhite" type="checkbox" checked /> show white</label>
-        <label><input id="showLid" type="checkbox" checked /> show lid</label>
-      </div>
     </section>
 
     <section>
@@ -265,6 +311,17 @@ export function mountApp(root: HTMLElement): void {
         <p class="hint">${PRINT_HELP_ORIGIN}</p>
       </details>
     </section>
+    </div>
+    <aside class="preview-pane">
+      <div class="section-label">Preview</div>
+      <div class="preview-wrap" id="preview"></div>
+      <div class="toggles">
+        <label><input id="showBlack" type="checkbox" checked /> show black</label>
+        <label><input id="showWhite" type="checkbox" checked /> show white</label>
+        <label><input id="showLid" type="checkbox" checked /> show lid</label>
+      </div>
+    </aside>
+    </div>
   `
 
   const content = root.querySelector<HTMLInputElement>('#content')!
@@ -288,6 +345,16 @@ export function mountApp(root: HTMLElement): void {
   const capLabel = root.querySelector<HTMLElement>('#capLabel')!
   const shapeFile = root.querySelector<HTMLInputElement>('#shapeFile')!
   const shapeError = root.querySelector<HTMLElement>('#shapeError')!
+  const blackText = root.querySelector<HTMLInputElement>('#blackText')!
+  const textFont = root.querySelector<HTMLSelectElement>('#textFont')!
+  const textSize = root.querySelector<HTMLInputElement>('#textSize')!
+  const textX = root.querySelector<HTMLInputElement>('#textX')!
+  const textY = root.querySelector<HTMLInputElement>('#textY')!
+  const stamp = root.querySelector<HTMLInputElement>('#stamp')!
+  const stampSize = root.querySelector<HTMLInputElement>('#stampSize')!
+  const stampX = root.querySelector<HTMLInputElement>('#stampX')!
+  const stampY = root.querySelector<HTMLInputElement>('#stampY')!
+  const stampError = root.querySelector<HTMLElement>('#stampError')!
   const logo = root.querySelector<HTMLInputElement>('#logo')!
   const logoSize = root.querySelector<HTMLInputElement>('#logoSize')!
   const blankLogo = root.querySelector<HTMLInputElement>('#blankLogo')!
@@ -306,6 +373,7 @@ export function mountApp(root: HTMLElement): void {
 
   const preview = createPreview(previewEl)
   let logoMask: boolean[][] | undefined
+  let imageMask: boolean[][] | undefined
   let customPlate: CustomPlate | null = null
   let last: {
     settings: QrSettings
@@ -347,6 +415,14 @@ export function mountApp(root: HTMLElement): void {
       cassetteSlider: cassSlider.checked,
       cassetteFlipSlider: cassFlip.checked,
       cassetteAccess: cassAccess.checked,
+      blackText: blackText.value,
+      blackTextFont: textFont.value,
+      blackTextSizeMm: Number(textSize.value),
+      blackTextXMm: Number(textX.value),
+      blackTextYMm: -Number(textY.value),
+      blackImageSizeMm: Number(stampSize.value),
+      blackImageXMm: Number(stampX.value),
+      blackImageYMm: -Number(stampY.value),
     }
   }
 
@@ -400,6 +476,13 @@ export function mountApp(root: HTMLElement): void {
     cap.value = String(settings.capThicknessMm)
     blankLogo.checked = settings.blankLogo
     logoSize.value = String(settings.logoSizePercent)
+    textFont.value = settings.blackTextFont
+    textSize.value = String(settings.blackTextSizeMm)
+    textX.value = String(settings.blackTextXMm)
+    textY.value = String(settings.blackTextYMm === 0 ? 0 : -settings.blackTextYMm)
+    stampSize.value = String(settings.blackImageSizeMm)
+    stampX.value = String(settings.blackImageXMm)
+    stampY.value = String(settings.blackImageYMm === 0 ? 0 : -settings.blackImageYMm)
   }
 
   function setExportEnabled(on: boolean, extras: ExtraStl[] = [], hasLid = false) {
@@ -484,7 +567,7 @@ export function mountApp(root: HTMLElement): void {
     settings.qrOffsetYMm = layout.qrOffsetYMm
     settings.qrSizePercent = Math.round(layout.qrSizePercent)
     writeClampedForm(settings)
-    const bodies = buildBodies(settings, matrix, logoMask, customPlate, kit)
+    const bodies = buildBodies(settings, matrix, logoMask, customPlate, kit, imageMask)
     preview.setMeshes(bodies.black, bodies.white, bodies.lid)
     preview.setVisible('black', showBlack.checked)
     preview.setVisible('white', showWhite.checked)
@@ -524,6 +607,32 @@ export function mountApp(root: HTMLElement): void {
   cap.addEventListener('change', rebuild)
   logoSize.addEventListener('change', rebuild)
   blankLogo.addEventListener('change', rebuild)
+  blackText.addEventListener('input', rebuild)
+  textFont.addEventListener('change', rebuild)
+  textSize.addEventListener('change', rebuild)
+  textX.addEventListener('change', rebuild)
+  textY.addEventListener('change', rebuild)
+  stampSize.addEventListener('change', rebuild)
+  stampX.addEventListener('change', rebuild)
+  stampY.addEventListener('change', rebuild)
+  stamp.addEventListener('change', async () => {
+    stampError.textContent = ''
+    const file = stamp.files?.[0]
+    if (!file) {
+      imageMask = undefined
+      rebuild()
+      return
+    }
+    const result = await logoMaskFromFile(file)
+    if (result === 'error') {
+      imageMask = undefined
+      stampError.textContent = 'This image could not be read.'
+      rebuild()
+      return
+    }
+    imageMask = result
+    rebuild()
+  })
   for (const radio of root.querySelectorAll<HTMLInputElement>('input[name="style"]')) {
     radio.addEventListener('change', rebuild)
   }
