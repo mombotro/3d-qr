@@ -64,16 +64,159 @@ describe('buildBodies', () => {
     expect(white.length).toBeGreaterThan(0)
   })
 
+  it('does not put black pads on the plate corners', () => {
+    const tag = clampSettings({
+      ...settings,
+      insetFrame: false,
+      plateShape: 'square',
+    })
+    const { black, white } = buildBodies(tag, matrix)
+    const atBed = (tris: typeof black) =>
+      tris.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (tris: typeof black, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    const corners = [
+      { x: 0.5, y: 0.5 },
+      { x: 79.5, y: 0.5 },
+      { x: 0.5, y: 79.5 },
+      { x: 79.5, y: 79.5 },
+    ]
+    for (const p of corners) {
+      expect(covers(atBed(black), p)).toBe(false)
+    }
+    expect(xyOf(white).minX).toBeCloseTo(0)
+    expect(xyOf(white).minY).toBeCloseTo(0)
+  })
+
+  it('stamps a second QR at its own offset', () => {
+    const extra = { content: 'https://other.example', sizePercent: 40, xMm: 18, yMm: -12 }
+    const tag = clampSettings({
+      ...settings,
+      insetFrame: false,
+      qrSizePercent: 55,
+      extraQrs: [extra],
+    })
+    const extraMatrix = encodeQr(extra.content, false)
+    const extraLayout = makeLayout(
+      tag.widthMm,
+      extraMatrix.size,
+      tag.plateShape,
+      tag.heightMm,
+      extra.xMm,
+      extra.yMm,
+      false,
+      tag.holeDiameterMm,
+      extra.sizePercent,
+    )
+    const { black, white } = buildBodies(tag, matrix)
+    const atZ0 = (tris: typeof black) =>
+      tris.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (tris: typeof black, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    const samples: { x: number; y: number }[] = []
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        if (!extraMatrix.modules[r]?.[c]) continue
+        const o = moduleOrigin(extraLayout, r, c)
+        samples.push({ x: o.x + extraLayout.moduleMm / 2, y: o.y + extraLayout.moduleMm / 2 })
+      }
+    }
+    expect(samples.length).toBeGreaterThan(0)
+    expect(samples.some((p) => covers(atZ0(black), p))).toBe(true)
+    expect(samples.every((p) => !covers(atZ0(white), p))).toBe(true)
+  })
+
+  it('cuts a blank window on an extra QR', () => {
+    const extra = {
+      content: 'https://other.example',
+      sizePercent: 45,
+      xMm: 16,
+      yMm: 0,
+      blankLogo: true,
+      logoSizePercent: 20,
+    }
+    const tag = clampSettings({
+      ...settings,
+      insetFrame: false,
+      qrSizePercent: 45,
+      qrOffsetXMm: -16,
+      extraQrs: [extra],
+    })
+    const extraMatrix = encodeQr(extra.content, true)
+    const extraLayout = makeLayout(
+      tag.widthMm,
+      extraMatrix.size,
+      tag.plateShape,
+      tag.heightMm,
+      extra.xMm,
+      extra.yMm,
+      false,
+      tag.holeDiameterMm,
+      extra.sizePercent,
+    )
+    const { r0, c0, r1 } = logoClearRect(extraMatrix.size, 20)
+    const origin = moduleOrigin(extraLayout, r0, c0)
+    const side = extraLayout.moduleMm * (r1 - r0)
+    const mid = { x: origin.x + side / 2, y: origin.y + side / 2 }
+    const { black, white } = buildBodies(tag, matrix)
+    const atZ0 = (tris: typeof black) =>
+      tris.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (tris: typeof black, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    expect(covers(atZ0(black), mid)).toBe(false)
+    expect(covers(atZ0(white), mid)).toBe(true)
+  })
+
+  it('stamps two black-layer images at separate origins', () => {
+    const tag = clampSettings({
+      ...settings,
+      insetFrame: false,
+      blackImages: [
+        { sizeMm: 6, xMm: 2, yMm: 2 },
+        { sizeMm: 6, xMm: 20, yMm: 30 },
+      ],
+    })
+    const mask = Array.from({ length: 6 }, () => Array<boolean>(6).fill(true))
+    const { black } = buildBodies(tag, matrix, undefined, null, null, [mask, mask])
+    const atZ0 = black.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (p: { x: number; y: number }) =>
+      atZ0.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    expect(covers({ x: 5, y: 5 })).toBe(true)
+    expect(covers({ x: 23, y: 33 })).toBe(true)
+  })
+
   it('stamps a black-layer image at the given origin', () => {
     const tag = clampSettings({
       ...settings,
       insetFrame: false,
-      blackImageSizeMm: 8,
-      blackImageXMm: 2,
-      blackImageYMm: 2,
+      blackImages: [{ sizeMm: 8, xMm: 2, yMm: 2 }],
     })
     const mask = Array.from({ length: 8 }, () => Array<boolean>(8).fill(true))
-    const { black, white } = buildBodies(tag, matrix, undefined, null, null, mask)
+    const { black, white } = buildBodies(tag, matrix, undefined, null, null, [mask])
     const mid = { x: 6, y: 6 }
     const atZ0 = (tris: typeof black) =>
       tris.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
@@ -99,27 +242,7 @@ describe('buildBodies', () => {
     expect(w.minY).toBeCloseTo(0)
   })
 
-  it('gives black and white the same XY box so Cura can center them together', () => {
-    const { black, white } = buildBodies(settings, matrix)
-    let bMaxX = -Infinity
-    let bMaxY = -Infinity
-    let wMaxX = -Infinity
-    let wMaxY = -Infinity
-    for (const t of black) {
-      for (const v of [t.a, t.b, t.c]) {
-        bMaxX = Math.max(bMaxX, v[0])
-        bMaxY = Math.max(bMaxY, v[1])
-      }
-    }
-    for (const t of white) {
-      for (const v of [t.a, t.b, t.c]) {
-        wMaxX = Math.max(wMaxX, v[0])
-        wMaxY = Math.max(wMaxY, v[1])
-      }
-    }
-    expect(bMaxX).toBeCloseTo(wMaxX, 3)
-    expect(bMaxY).toBeCloseTo(wMaxY, 3)
-  })
+
 
   it('leaves a 0.20 mm gap around a square data module', () => {
     const square = clampSettings({ ...settings, style: 'square' })
@@ -630,6 +753,50 @@ describe('buildBodies', () => {
     expect(zRange(white).max).toBeCloseTo(2.0)
   })
 
+  it('keeps spindle and pin holes open through the cassette lid', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: true,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr.stl')),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { white } = buildBodies(tag, matrix, undefined, null, kit)
+    const coversAt = (z: number, p: { x: number; y: number }) =>
+      white.some((t) => {
+        if (
+          Math.abs(t.a[2] - z) > 0.08 ||
+          Math.abs(t.b[2] - z) > 0.08 ||
+          Math.abs(t.c[2] - z) > 0.08
+        ) {
+          return false
+        }
+        return pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ])
+      })
+    const spindle = { x: 28.5, y: 28.5 }
+    const pin = { x: 2, y: 1.8 }
+    for (const z of [0, 0.6, 2, 2.676]) {
+      expect(coversAt(z, spindle)).toBe(false)
+      expect(coversAt(z, pin)).toBe(false)
+    }
+    expect(coversAt(2.676, { x: 50, y: 32 })).toBe(true)
+  })
+
   it('pockets the printed top plate and exports the shell parts', () => {
     const load = (name: string) => {
       const buf = readFileSync(join(process.cwd(), 'cassette', name))
@@ -657,28 +824,10 @@ describe('buildBodies', () => {
     expect(zRange(white).max).toBeGreaterThan(2)
     const b = xyOf(black)
     const w = xyOf(white)
-    expect(b.minX).toBeCloseTo(0, 1)
-    expect(b.minY).toBeCloseTo(0, 1)
     expect(w.minX).toBeCloseTo(0, 1)
     expect(w.minY).toBeCloseTo(0, 1)
-    let bMaxX = -Infinity
-    let bMaxY = -Infinity
-    let wMaxX = -Infinity
-    let wMaxY = -Infinity
-    for (const t of black) {
-      for (const v of [t.a, t.b, t.c]) {
-        bMaxX = Math.max(bMaxX, v[0])
-        bMaxY = Math.max(bMaxY, v[1])
-      }
-    }
-    for (const t of white) {
-      for (const v of [t.a, t.b, t.c]) {
-        wMaxX = Math.max(wMaxX, v[0])
-        wMaxY = Math.max(wMaxY, v[1])
-      }
-    }
-    expect(bMaxX).toBeCloseTo(wMaxX, 0)
-    expect(bMaxY).toBeCloseTo(wMaxY, 0)
+    expect(b.minX).toBeGreaterThanOrEqual(-0.05)
+    expect(b.minY).toBeGreaterThanOrEqual(-0.05)
     expect(extras.map((e) => e.filename)).toEqual([
       'cassette-bottom.stl',
       'cassette-slider.stl',

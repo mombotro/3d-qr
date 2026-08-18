@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { buildBodies } from '../src/bodies'
 import { prepareTopPlate } from '../src/cassetteParts'
 import { encodeQr } from '../src/encode'
-import { readBinaryStl } from '../src/stl'
+import { readBinaryStl, writeBinaryStl } from '../src/stl'
 import { clampSettings } from '../src/validate'
 
 function edgeKey(p: number[], q: number[]): string {
@@ -67,8 +67,52 @@ describe('cassette meshes', () => {
     const { black, white } = buildBodies(tag, matrix, undefined, null, kit)
     const b = countBadEdges(black)
     const w = countBadEdges(white)
-    expect({ blackMulti: b.multi, whiteMulti: w.multi }).toEqual({
+    expect({
+      blackOpen: b.open,
+      blackMulti: b.multi,
+      whiteOpen: w.open,
+      whiteMulti: w.multi,
+    }).toEqual({
+      blackOpen: 0,
       blackMulti: 0,
+      whiteOpen: 0,
+      whiteMulti: 0,
+    })
+    const blackStl = countBadEdges(readBinaryStl(writeBinaryStl(black)).triangles)
+    const whiteStl = countBadEdges(readBinaryStl(writeBinaryStl(white)).triangles)
+    expect({
+      blackOpen: blackStl.open,
+      blackMulti: blackStl.multi,
+      whiteOpen: whiteStl.open,
+      whiteMulti: whiteStl.multi,
+    }).toEqual({
+      blackOpen: 0,
+      blackMulti: 0,
+      whiteOpen: 0,
+      whiteMulti: 0,
+    })
+  })
+
+  it('keeps a square tag manifold after an STL round trip', () => {
+    const tag = clampSettings({
+      content: 'https://example.com',
+      plateShape: 'square',
+      widthMm: 80,
+      blackHeightMm: 0.6,
+      insetFrame: true,
+    })
+    const { black, white } = buildBodies(tag, matrix)
+    const b = countBadEdges(readBinaryStl(writeBinaryStl(black)).triangles)
+    const w = countBadEdges(readBinaryStl(writeBinaryStl(white)).triangles)
+    expect({
+      blackOpen: b.open,
+      blackMulti: b.multi,
+      whiteOpen: w.open,
+      whiteMulti: w.multi,
+    }).toEqual({
+      blackOpen: 0,
+      blackMulti: 0,
+      whiteOpen: 0,
       whiteMulti: 0,
     })
   })

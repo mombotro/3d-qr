@@ -82,9 +82,17 @@ export function ringWallsWhere(
   return out
 }
 
-export function capFaces(outer: Polygon, holes: Polygon[], z: number, up: boolean): Triangle[] {
-  const ring = cleanRing(outer)
-  const inner = holes.map((h) => cleanRing(h)).filter((h) => h.length >= 3)
+export function capFaces(
+  outer: Polygon,
+  holes: Polygon[],
+  z: number,
+  up: boolean,
+  tidy = true,
+): Triangle[] {
+  const ring = tidy ? cleanRing(outer) : outer.map((p) => ({ ...p }))
+  const inner = tidy
+    ? holes.map((h) => cleanRing(h)).filter((h) => h.length >= 3)
+    : holes.filter((h) => h.length >= 3)
   if (signedArea(ring) < 0) ring.reverse()
   for (const h of inner) {
     if (signedArea(h) > 0) h.reverse()
@@ -109,8 +117,8 @@ export function extrudeRing(outer: Polygon, holes: Polygon[], z0: number, z1: nu
   const ring = cleanRing(outer)
   const inner = holes.map((h) => cleanRing(h)).filter((h) => h.length >= 3)
   const tris: Triangle[] = []
-  tris.push(...capFaces(ring, inner, z1, true))
-  tris.push(...capFaces(ring, inner, z0, false))
+  tris.push(...capFaces(ring, inner, z1, true, false))
+  tris.push(...capFaces(ring, inner, z0, false, false))
   tris.push(...ringWalls(ring, z0, z1, true))
   for (const hole of inner) {
     tris.push(...ringWalls(hole, z0, z1, false))

@@ -44,6 +44,17 @@ export function signedArea(poly: Polygon): number {
   return a / 2
 }
 
+export function ringCentroid(poly: Polygon): Point2 {
+  let x = 0
+  let y = 0
+  for (const p of poly) {
+    x += p.x
+    y += p.y
+  }
+  const n = poly.length || 1
+  return { x: x / n, y: y / n }
+}
+
 export function insetPolygon(poly: Polygon, insetMm: number): Polygon {
   if (insetMm === 0) return poly.map((p) => ({ ...p }))
   const area = signedArea(poly)

@@ -1,7 +1,15 @@
 import { CARD_ASPECT, CARD_DEFAULT_WIDTH_MM } from './card'
 import { CASSETTE_ASPECT, CASSETTE_DEFAULT_WIDTH_MM, CASSETTE_WIDTH_MM } from './cassette'
 import { isTextFontId } from './text'
-import { LIMITS, type PlateShape, type QrSettings, type QrStyle } from './types'
+import {
+  LIMITS,
+  type BlackImageStamp,
+  type BlackTextStamp,
+  type ExtraQrStamp,
+  type PlateShape,
+  type QrSettings,
+  type QrStyle,
+} from './types'
 
 export { LIMITS, GAP_MM, FRAME_MODULES, QUIET_ZONE_MODULES } from './types'
 export type { PlateShape, QrSettings, QrStyle } from './types'
@@ -95,15 +103,134 @@ export function defaultSettings(): QrSettings {
     cassetteSlider: true,
     cassetteFlipSlider: false,
     cassetteAccess: true,
-    blackText: '',
-    blackTextFont: 'sans',
-    blackTextSizeMm: LIMITS.blackTextSizeMm.default,
-    blackTextXMm: 4,
-    blackTextYMm: 4,
-    blackImageSizeMm: LIMITS.blackImageSizeMm.default,
-    blackImageXMm: 4,
-    blackImageYMm: 16,
+    extraQrs: [],
+    blackTexts: [],
+    blackImages: [],
   }
+}
+
+export function defaultExtraQr(): ExtraQrStamp {
+  return {
+    content: '',
+    sizePercent: 50,
+    xMm: 16,
+    yMm: 0,
+    blankLogo: false,
+    logoSizePercent: LIMITS.logoSizePercent.default,
+  }
+}
+
+export function defaultTextStamp(): BlackTextStamp {
+  return {
+    text: '',
+    font: 'sans',
+    sizeMm: LIMITS.blackTextSizeMm.default,
+    xMm: 4,
+    yMm: 4,
+  }
+}
+
+export function defaultImageStamp(): BlackImageStamp {
+  return {
+    sizeMm: LIMITS.blackImageSizeMm.default,
+    xMm: 4,
+    yMm: 16,
+  }
+}
+
+function clampExtraQr(raw: Partial<ExtraQrStamp>): ExtraQrStamp {
+  const base = defaultExtraQr()
+  return {
+    content: String(raw.content ?? base.content),
+    sizePercent: clampNumber(
+      raw.sizePercent ?? base.sizePercent,
+      LIMITS.qrSizePercent.min,
+      LIMITS.qrSizePercent.max,
+    ),
+    xMm: Number.isFinite(raw.xMm) ? (raw.xMm as number) : base.xMm,
+    yMm: Number.isFinite(raw.yMm) ? (raw.yMm as number) : base.yMm,
+    blankLogo: raw.blankLogo ?? base.blankLogo,
+    logoSizePercent: clampNumber(
+      raw.logoSizePercent ?? base.logoSizePercent,
+      LIMITS.logoSizePercent.min,
+      LIMITS.logoSizePercent.max,
+    ),
+  }
+}
+
+function clampExtraQrList(raw: Partial<QrSettings>): ExtraQrStamp[] {
+  if (!Array.isArray(raw.extraQrs)) return []
+  return raw.extraQrs.slice(0, 8).map(clampExtraQr)
+}
+
+function clampTextStamp(raw: Partial<BlackTextStamp>): BlackTextStamp {
+  const base = defaultTextStamp()
+  return {
+    text: String(raw.text ?? base.text).slice(0, 80),
+    font: isTextFontId(raw.font ?? '') ? raw.font! : base.font,
+    sizeMm: clampNumber(raw.sizeMm ?? base.sizeMm, LIMITS.blackTextSizeMm.min, LIMITS.blackTextSizeMm.max),
+    xMm: Number.isFinite(raw.xMm) ? (raw.xMm as number) : base.xMm,
+    yMm: Number.isFinite(raw.yMm) ? (raw.yMm as number) : base.yMm,
+  }
+}
+
+function clampImageStamp(raw: Partial<BlackImageStamp>): BlackImageStamp {
+  const base = defaultImageStamp()
+  return {
+    sizeMm: clampNumber(
+      raw.sizeMm ?? base.sizeMm,
+      LIMITS.blackImageSizeMm.min,
+      LIMITS.blackImageSizeMm.max,
+    ),
+    xMm: Number.isFinite(raw.xMm) ? (raw.xMm as number) : base.xMm,
+    yMm: Number.isFinite(raw.yMm) ? (raw.yMm as number) : base.yMm,
+  }
+}
+
+function clampTextList(raw: Partial<QrSettings>): BlackTextStamp[] {
+  if (Array.isArray(raw.blackTexts)) return raw.blackTexts.slice(0, 8).map(clampTextStamp)
+  const legacy = raw as Partial<QrSettings> & {
+    blackText?: string
+    blackTextFont?: string
+    blackTextSizeMm?: number
+    blackTextXMm?: number
+    blackTextYMm?: number
+  }
+  if (legacy.blackText?.trim()) {
+    return [
+      clampTextStamp({
+        text: legacy.blackText,
+        font: legacy.blackTextFont,
+        sizeMm: legacy.blackTextSizeMm,
+        xMm: legacy.blackTextXMm,
+        yMm: legacy.blackTextYMm,
+      }),
+    ]
+  }
+  return []
+}
+
+function clampImageList(raw: Partial<QrSettings>): BlackImageStamp[] {
+  if (Array.isArray(raw.blackImages)) return raw.blackImages.slice(0, 8).map(clampImageStamp)
+  const legacy = raw as Partial<QrSettings> & {
+    blackImageSizeMm?: number
+    blackImageXMm?: number
+    blackImageYMm?: number
+  }
+  if (
+    legacy.blackImageSizeMm !== undefined ||
+    legacy.blackImageXMm !== undefined ||
+    legacy.blackImageYMm !== undefined
+  ) {
+    return [
+      clampImageStamp({
+        sizeMm: legacy.blackImageSizeMm,
+        xMm: legacy.blackImageXMm,
+        yMm: legacy.blackImageYMm,
+      }),
+    ]
+  }
+  return []
 }
 
 function defaultWidthMm(shape: PlateShape): number {
@@ -195,25 +322,8 @@ export function clampSettings(raw: Partial<QrSettings>): QrSettings {
     cassetteSlider: raw.cassetteSlider ?? base.cassetteSlider,
     cassetteFlipSlider: raw.cassetteFlipSlider ?? base.cassetteFlipSlider,
     cassetteAccess: raw.cassetteAccess ?? base.cassetteAccess,
-    blackText: (raw.blackText ?? base.blackText).slice(0, 80),
-    blackTextFont: isTextFontId(raw.blackTextFont ?? '') ? raw.blackTextFont! : base.blackTextFont,
-    blackTextSizeMm: clampNumber(
-      raw.blackTextSizeMm ?? base.blackTextSizeMm,
-      LIMITS.blackTextSizeMm.min,
-      LIMITS.blackTextSizeMm.max,
-    ),
-    blackTextXMm: Number.isFinite(raw.blackTextXMm) ? (raw.blackTextXMm as number) : base.blackTextXMm,
-    blackTextYMm: Number.isFinite(raw.blackTextYMm) ? (raw.blackTextYMm as number) : base.blackTextYMm,
-    blackImageSizeMm: clampNumber(
-      raw.blackImageSizeMm ?? base.blackImageSizeMm,
-      LIMITS.blackImageSizeMm.min,
-      LIMITS.blackImageSizeMm.max,
-    ),
-    blackImageXMm: Number.isFinite(raw.blackImageXMm)
-      ? (raw.blackImageXMm as number)
-      : base.blackImageXMm,
-    blackImageYMm: Number.isFinite(raw.blackImageYMm)
-      ? (raw.blackImageYMm as number)
-      : base.blackImageYMm,
+    extraQrs: clampExtraQrList(raw),
+    blackTexts: clampTextList(raw),
+    blackImages: clampImageList(raw),
   }
 }

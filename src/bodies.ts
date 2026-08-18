@@ -8,11 +8,11 @@ import {
 } from 'polygon-clipping'
 import type { CustomPlate } from './contour'
 import { customFrame, scaleCustomPlate } from './contour'
-import type { QrMatrix } from './encode'
+import { canEncode, encodeQr, type QrMatrix } from './encode'
 import { capFaces, extrudeRing, ringWalls, type Triangle } from './extrude'
 import { isReservedCell, makeLayout, moduleOrigin } from './layout'
 import { applyLogoClear, logoClearRect, maskToPolygons } from './logo'
-import { cleanRing, insetPolygon, offsetPolygon } from './offset'
+import { cleanRing, insetPolygon, offsetPolygon, pointInPolygon, ringCentroid } from './offset'
 import { dogtagHole, modulePoly, plateFrameAt, plateOutlineAt, type Polygon } from './shapes'
 import {
   CASSETTE_ASPECT,
@@ -91,6 +91,40 @@ function blackModulePolys(
   return polys
 }
 
+function extraQrGeom(
+  settings: QrSettings,
+  tagHeight: number,
+  extraLogoMasks?: (boolean[][] | undefined)[],
+): { modules: Polygon[]; logos: Polygon[] } {
+  const modules: Polygon[] = []
+  const logos: Polygon[] = []
+  settings.extraQrs.forEach((stamp, i) => {
+    const content = stamp.content.trim()
+    const mask = extraLogoMasks?.[i]
+    const hasLogo = stamp.blankLogo || Boolean(mask)
+    if (!content || !canEncode(content, hasLogo)) return
+    const matrix = encodeQr(content, hasLogo)
+    const layout = makeLayout(
+      settings.widthMm,
+      matrix.size,
+      settings.plateShape,
+      tagHeight,
+      stamp.xMm,
+      stamp.yMm,
+      settings.dogtagHole,
+      settings.holeDiameterMm,
+      stamp.sizePercent,
+    )
+    const percent = stamp.logoSizePercent
+    const cells = hasLogo ? applyLogoClear(matrix.modules, percent) : matrix.modules
+    modules.push(...blackModulePolys(settings, cells, layout))
+    if (mask && !stamp.blankLogo) {
+      logos.push(...logoPolys(matrix.size, layout, mask, percent))
+    }
+  })
+  return { modules, logos }
+}
+
 function logoPolys(
   matrixSize: number,
   layout: ReturnType<typeof makeLayout>,
@@ -118,7 +152,9 @@ export function buildBodies(
   logoMask?: boolean[][],
   customPlate?: CustomPlate | null,
   cassette?: CassetteKit | null,
-  imageMask?: boolean[][],
+  imageMasks?: (boolean[][] | undefined)[],
+  extraLogoMasks?: (boolean[][] | undefined)[],
+  repair = true,
 ): Bodies {
   const tagPlate = shapedPlate(settings, customPlate)
   const isShaped = Boolean(tagPlate)
@@ -163,28 +199,23 @@ export function buildBodies(
     ...w.holes.map((h) => toRing(h)),
   ])
   const holeClips: ClipPolygon[] = (scaled?.holes ?? []).map((h) => [toRing(h)])
-  const modulesPolys = blackModulePolys(settings, modules, layout)
-  const logos =
-    logoMask && !settings.blankLogo
+  const extra = extraQrGeom(settings, tagHeight, extraLogoMasks)
+  const modulesPolys = [...blackModulePolys(settings, modules, layout), ...extra.modules]
+  const logos = [
+    ...(logoMask && !settings.blankLogo
       ? logoPolys(matrix.size, layout, logoMask, percent)
-      : []
-  const textShapes = settings.blackText.trim()
-    ? textToShapes(
-        settings.blackText,
-        settings.blackTextFont,
-        settings.blackTextXMm,
-        settings.blackTextYMm,
-        settings.blackTextSizeMm,
-      )
-    : []
-  const imageShapes = imageMask?.length
-    ? maskToPlacedShapes(
-        imageMask,
-        settings.blackImageXMm,
-        settings.blackImageYMm,
-        settings.blackImageSizeMm,
-      )
-    : []
+      : []),
+    ...extra.logos,
+  ]
+  const textShapes = settings.blackTexts.flatMap((stamp) =>
+    stamp.text.trim()
+      ? textToShapes(stamp.text, stamp.font, stamp.xMm, stamp.yMm, stamp.sizeMm)
+      : [],
+  )
+  const imageShapes = settings.blackImages.flatMap((stamp, i) => {
+    const mask = imageMasks?.[i]
+    return mask?.length ? maskToPlacedShapes(mask, stamp.xMm, stamp.yMm, stamp.sizeMm) : []
+  })
   const stampShapes = [...textShapes, ...imageShapes]
   const qrBlack = unionMany([
     ...[...modulesPolys, ...logos].map((p) => [toRing(offsetPolygon(p, 0.05))]),
@@ -245,7 +276,7 @@ export function buildBodies(
       faceWells,
       stampClips,
     )
-    const aligned = alignExportOrigin(black, white)
+    const aligned = alignExportOrigin(black, white, repair)
     const whiteOnOrigin = aligned.white
     const blackPinned = aligned.black
     const extras: ExtraStl[] = []
@@ -275,7 +306,7 @@ export function buildBodies(
     : whiteSolid(outline, fill, throughHoles, 0, zFloor, zTop, raised)
 
   const lid = settings.lid ? extrudeRing(outline, throughHoles, 0, LID_THICKNESS_MM) : []
-  const aligned = alignExportOrigin(black, white)
+  const aligned = alignExportOrigin(black, white, repair)
 
   return { black: aligned.black, white: aligned.white, lid, extras: [] }
 }
@@ -332,7 +363,7 @@ function cassetteSolidPlate(
       : difference([toRing(outline)], ...unionMany(cutters))
   const tris: Triangle[] = []
   for (const piece of clipPieces(fill)) {
-    tris.push(...capFaces(piece.outer, piece.holes, z0, false))
+    tris.push(...capFaces(piece.outer, piece.holes, z0, false, false))
     tris.push(...ringWalls(piece.outer, z0, zQr, true))
     for (const hole of piece.holes) {
       tris.push(...ringWalls(hole, z0, zQr, false))
@@ -343,20 +374,30 @@ function cassetteSolidPlate(
       ? difference(pocketUnion, ...holeClips)
       : pocketUnion
     for (const piece of clipPieces(qrCeil)) {
-      tris.push(...capFaces(piece.outer, piece.holes, zQr, false))
+      tris.push(...capFaces(piece.outer, piece.holes, zQr, false, false))
     }
   }
   tris.push(...ringWalls(outline, zQr, zTop, true))
   const lip = withLip ? cassetteLipPoly() : null
+  const holesInLip = lip
+    ? throughHoles.filter((h) => pointInPolygon(ringCentroid(h), lip))
+    : []
+  const holesInRim = lip
+    ? throughHoles.filter((h) => !pointInPolygon(ringCentroid(h), lip))
+    : throughHoles
+  const zBack = lip ? zTop + CASSETTE_LIP_H_MM : zTop
   if (lip) {
-    tris.push(...capFaces(outline, [...throughHoles, lip], zTop, true))
-    tris.push(...capFaces(lip, throughHoles, zTop + CASSETTE_LIP_H_MM, true))
-    tris.push(...ringWalls(lip, zTop, zTop + CASSETTE_LIP_H_MM, true))
+    tris.push(...capFaces(outline, [...holesInRim, lip], zTop, true, false))
+    tris.push(...capFaces(lip, holesInLip, zBack, true, false))
+    tris.push(...ringWalls(lip, zTop, zBack, true))
   } else {
-    tris.push(...capFaces(outline, throughHoles, zTop, true))
+    tris.push(...capFaces(outline, throughHoles, zTop, true, false))
   }
-  for (const hole of throughHoles) {
+  for (const hole of holesInRim) {
     tris.push(...ringWalls(hole, zQr, zTop, false))
+  }
+  for (const hole of holesInLip) {
+    tris.push(...ringWalls(hole, zQr, zBack, false))
   }
   return tris
 }
@@ -372,7 +413,7 @@ function whiteSolid(
 ): Triangle[] {
   const tris: Triangle[] = []
   for (const piece of clipPieces(fill)) {
-    tris.push(...capFaces(piece.outer, piece.holes, z0, false))
+    tris.push(...capFaces(piece.outer, piece.holes, z0, false, false))
     tris.push(...ringWalls(piece.outer, z0, zFloor, true))
     for (const hole of piece.holes) {
       tris.push(...ringWalls(hole, z0, zFloor, false))
@@ -387,14 +428,14 @@ function whiteSolid(
       ? []
       : difference([toRing(outline)], ...unionMany(stepSubs))
   for (const piece of clipPieces(step)) {
-    tris.push(...capFaces(piece.outer, piece.holes, zFloor, false))
+    tris.push(...capFaces(piece.outer, piece.holes, zFloor, false, false))
   }
   if (raised && raised.length >= 3) {
-    tris.push(...capFaces(outline, [...throughHoles, raised], zTop, true))
-    tris.push(...capFaces(raised, [], zTop + CASSETTE_HEAD_STRIP_RAISE_MM, true))
+    tris.push(...capFaces(outline, [...throughHoles, raised], zTop, true, false))
+    tris.push(...capFaces(raised, [], zTop + CASSETTE_HEAD_STRIP_RAISE_MM, true, false))
     tris.push(...ringWalls(raised, zTop, zTop + CASSETTE_HEAD_STRIP_RAISE_MM, true))
   } else {
-    tris.push(...capFaces(outline, throughHoles, zTop, true))
+    tris.push(...capFaces(outline, throughHoles, zTop, true, false))
   }
   tris.push(...ringWalls(outline, zFloor, zTop, true))
   for (const hole of throughHoles) {
@@ -414,7 +455,7 @@ function whiteHollow(
 ): Triangle[] {
   const tris: Triangle[] = []
   for (const piece of clipPieces(fill)) {
-    tris.push(...capFaces(piece.outer, piece.holes, z0, false))
+    tris.push(...capFaces(piece.outer, piece.holes, z0, false, false))
     tris.push(...ringWalls(piece.outer, z0, zFloor, true))
     for (const hole of piece.holes) {
       tris.push(...ringWalls(hole, z0, zFloor, false))
@@ -422,9 +463,9 @@ function whiteHollow(
   }
   const tops = fill.flatMap((piece) => intersection(piece, [toRing(inner)]))
   for (const piece of clipPieces(tops)) {
-    tris.push(...capFaces(piece.outer, piece.holes, zFloor, true))
+    tris.push(...capFaces(piece.outer, piece.holes, zFloor, true, false))
   }
-  tris.push(...capFaces(outline, [inner], zTop, true))
+  tris.push(...capFaces(outline, [inner], zTop, true, false))
   tris.push(...ringWalls(outline, zFloor, zTop, true))
   tris.push(...ringWalls(inner, zFloor, zTop, false))
   return tris

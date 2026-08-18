@@ -38,19 +38,55 @@ describe('maskToPlacedShapes', () => {
 describe('clampSettings text', () => {
   it('keeps a label and snaps size', () => {
     const s = clampSettings({
-      blackText: 'HELLO',
-      blackTextFont: 'mono',
-      blackTextSizeMm: 80,
-      blackTextXMm: 12,
-      blackTextYMm: 8,
+      blackTexts: [{ text: 'HELLO', font: 'mono', sizeMm: 80, xMm: 12, yMm: 8 }],
+      blackImages: [{ sizeMm: 90, xMm: 3, yMm: 5 }],
     })
-    expect(s.blackText).toBe('HELLO')
-    expect(s.blackTextFont).toBe('mono')
-    expect(s.blackTextSizeMm).toBe(40)
-    expect(s.blackTextXMm).toBe(12)
-    expect(s.blackTextYMm).toBe(8)
-    expect(clampSettings({ blackTextFont: 'papyrus' }).blackTextFont).toBe('sans')
-    expect(clampSettings({ blackImageSizeMm: 1 }).blackImageSizeMm).toBe(2)
-    expect(clampSettings({ blackImageSizeMm: 90 }).blackImageSizeMm).toBe(60)
+    expect(s.blackTexts).toHaveLength(1)
+    expect(s.blackTexts[0]?.text).toBe('HELLO')
+    expect(s.blackTexts[0]?.font).toBe('mono')
+    expect(s.blackTexts[0]?.sizeMm).toBe(40)
+    expect(s.blackTexts[0]?.xMm).toBe(12)
+    expect(s.blackImages[0]?.sizeMm).toBe(60)
+    expect(clampSettings({ blackTexts: [{ text: 'A', font: 'papyrus', sizeMm: 6, xMm: 0, yMm: 0 }] }).blackTexts[0]?.font).toBe(
+      'sans',
+    )
+  })
+
+  it('keeps several text and image stamps', () => {
+    const s = clampSettings({
+      blackTexts: [
+        { text: 'ONE', font: 'sans', sizeMm: 6, xMm: 2, yMm: 2 },
+        { text: 'TWO', font: 'mono', sizeMm: 8, xMm: 10, yMm: 4 },
+      ],
+      blackImages: [
+        { sizeMm: 8, xMm: 1, yMm: 1 },
+        { sizeMm: 12, xMm: 20, yMm: 8 },
+      ],
+    })
+    expect(s.blackTexts).toHaveLength(2)
+    expect(s.blackTexts[1]?.text).toBe('TWO')
+    expect(s.blackImages).toHaveLength(2)
+    expect(s.blackImages[1]?.xMm).toBe(20)
+  })
+
+  it('keeps several extra QR stamps and snaps size', () => {
+    const s = clampSettings({
+      extraQrs: [
+        { content: 'https://a.example', sizePercent: 10, xMm: 8, yMm: -4 },
+        { content: 'https://b.example', sizePercent: 300, xMm: 0, yMm: 6 },
+      ],
+    })
+    expect(s.extraQrs).toHaveLength(2)
+    expect(s.extraQrs[0]?.content).toBe('https://a.example')
+    expect(s.extraQrs[0]?.sizePercent).toBe(40)
+    expect(s.extraQrs[0]?.xMm).toBe(8)
+    expect(s.extraQrs[0]?.blankLogo).toBe(false)
+    expect(s.extraQrs[0]?.logoSizePercent).toBe(20)
+    expect(s.extraQrs[1]?.sizePercent).toBe(200)
+    expect(
+      clampSettings({
+        extraQrs: [{ content: 'https://c.example', sizePercent: 50, xMm: 0, yMm: 0, blankLogo: true, logoSizePercent: 80 }],
+      }).extraQrs[0],
+    ).toMatchObject({ blankLogo: true, logoSizePercent: 50 })
   })
 })

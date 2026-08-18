@@ -27,14 +27,9 @@ describe('clampSettings', () => {
     expect(s.cassetteSlider).toBe(true)
     expect(s.cassetteFlipSlider).toBe(false)
     expect(s.cassetteAccess).toBe(true)
-    expect(s.blackText).toBe('')
-    expect(s.blackTextFont).toBe('sans')
-    expect(s.blackTextSizeMm).toBe(6)
-    expect(s.blackTextXMm).toBe(4)
-    expect(s.blackTextYMm).toBe(4)
-    expect(s.blackImageSizeMm).toBe(12)
-    expect(s.blackImageXMm).toBe(4)
-    expect(s.blackImageYMm).toBe(16)
+    expect(s.extraQrs).toEqual([])
+    expect(s.blackTexts).toEqual([])
+    expect(s.blackImages).toEqual([])
     expect(s.plateShape).not.toBe('cassette')
     expect(s.blackHeightMm).toBe(LIMITS.blackHeightMm.min)
   })
@@ -137,14 +132,9 @@ describe('clampSettings', () => {
       cassetteSlider: true,
       cassetteFlipSlider: false,
       cassetteAccess: true,
-      blackText: '',
-      blackTextFont: 'sans',
-      blackTextSizeMm: 6,
-      blackTextXMm: 4,
-      blackTextYMm: 4,
-      blackImageSizeMm: 12,
-      blackImageXMm: 4,
-      blackImageYMm: 16,
+      extraQrs: [],
+      blackTexts: [],
+      blackImages: [],
     })
   })
 })

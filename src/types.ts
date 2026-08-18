@@ -35,14 +35,32 @@ export type QrSettings = {
   cassetteSlider: boolean
   cassetteFlipSlider: boolean
   cassetteAccess: boolean
-  blackText: string
-  blackTextFont: string
-  blackTextSizeMm: number
-  blackTextXMm: number
-  blackTextYMm: number
-  blackImageSizeMm: number
-  blackImageXMm: number
-  blackImageYMm: number
+  extraQrs: ExtraQrStamp[]
+  blackTexts: BlackTextStamp[]
+  blackImages: BlackImageStamp[]
+}
+
+export type ExtraQrStamp = {
+  content: string
+  sizePercent: number
+  xMm: number
+  yMm: number
+  blankLogo: boolean
+  logoSizePercent: number
+}
+
+export type BlackTextStamp = {
+  text: string
+  font: string
+  sizeMm: number
+  xMm: number
+  yMm: number
+}
+
+export type BlackImageStamp = {
+  sizeMm: number
+  xMm: number
+  yMm: number
 }
 
 export const GAP_MM = 0.2

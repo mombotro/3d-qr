@@ -10,7 +10,7 @@ export const PRINT_HELP_STEPS = [
 ] as const
 
 export const PRINT_HELP_ORIGIN =
-  'Both files share the same origin and the same XY box. In Orca they line up as loaded. In Cura turn off Ensure models are kept apart, load both, then set the same X and Y on each (or Merge). Do not let Cura center them one at a time.'
+  'Both files share the same origin. In Orca they line up as loaded. In Cura turn off Ensure models are kept apart, load both, then set the same X and Y on each (or Merge). Do not let Cura center them one at a time.'
 
 export const PRINT_HELP_CASSETTE = [
   'Print qr-black.stl first. QR face on the bed. Print slowly. Use 2 walls. Do not use a skirt or brim.',

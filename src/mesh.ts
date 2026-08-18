@@ -1,5 +1,5 @@
 import { difference, union, type Pair, type Polygon as ClipPolygon } from 'polygon-clipping'
-import { capFaces, extrudeRing, ringWalls, type Triangle } from './extrude'
+import { capFaces, ringWalls, type Triangle } from './extrude'
 import type { Polygon } from './shapes'
 
 export type BBox = {
@@ -76,46 +76,251 @@ export function placeOnBed(tris: Triangle[]): Triangle[] {
   return translateMesh(tris, -b.minX, -b.minY, -b.minZ)
 }
 
-/**
- * Pads at all four AABB corners so Cura and Orca see the same box.
- * Cura recenters each file on its bounding box and may drop 0.2 mm specks.
- */
-export function originPins(widthMm: number, heightMm: number, heightZ = 0.2): Triangle[] {
-  const s = 1
-  const pin = (x: number, y: number) =>
-    extrudeRing(
-      [
-        { x, y },
-        { x: x + s, y },
-        { x: x + s, y: y + s },
-        { x, y: y + s },
-      ],
-      [],
-      0,
-      heightZ,
-    )
-  return [
-    ...pin(0, 0),
-    ...pin(widthMm - s, 0),
-    ...pin(0, heightMm - s),
-    ...pin(widthMm - s, heightMm - s),
-  ]
-}
-
-/** Shift both meshes to the plate min corner and pin the same XY box on each. */
+/** Shift both meshes to the plate min corner. */
 export function alignExportOrigin(
   black: Triangle[],
   white: Triangle[],
+  repair = true,
 ): { black: Triangle[]; white: Triangle[] } {
   const box = meshBBox(white)
-  const whiteOnOrigin = translateMesh(white, -box.minX, -box.minY, -box.minZ)
-  const blackOnOrigin = translateMesh(black, -box.minX, -box.minY, -box.minZ)
-  const placed = meshBBox(whiteOnOrigin)
-  const pins = originPins(placed.maxX, placed.maxY)
+  const movedBlack = translateMesh(black, -box.minX, -box.minY, -box.minZ)
+  const movedWhite = translateMesh(white, -box.minX, -box.minY, -box.minZ)
+  if (!repair) return { black: movedBlack, white: movedWhite }
   return {
-    black: [...blackOnOrigin, ...pins],
-    white: whiteOnOrigin,
+    black: repairMesh(movedBlack),
+    white: repairMesh(movedWhite),
   }
+}
+
+function vertKey(p: [number, number, number], eps: number): string {
+  const s = 1 / eps
+  return `${Math.round(p[0] * s) / s},${Math.round(p[1] * s) / s},${Math.round(p[2] * s) / s}`
+}
+
+function snapVert(p: [number, number, number], eps: number): [number, number, number] {
+  const s = 1 / eps
+  return [
+    Math.fround(Math.round(p[0] * s) / s),
+    Math.fround(Math.round(p[1] * s) / s),
+    Math.fround(Math.round(p[2] * s) / s),
+  ]
+}
+
+function dist3(a: [number, number, number], b: [number, number, number]): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+}
+
+function onSegment(
+  p: [number, number, number],
+  a: [number, number, number],
+  b: [number, number, number],
+  eps: number,
+): boolean {
+  const ab = dist3(a, b)
+  if (ab < eps) return false
+  const ap = dist3(a, p)
+  const pb = dist3(p, b)
+  if (ap < eps || pb < eps) return false
+  return Math.abs(ap + pb - ab) < eps * 2
+}
+
+function uniqueVerts(tris: Triangle[], eps: number): [number, number, number][] {
+  const seen = new Set<string>()
+  const verts: [number, number, number][] = []
+  for (const t of tris) {
+    for (const p of [t.a, t.b, t.c]) {
+      const k = vertKey(p, eps)
+      if (seen.has(k)) continue
+      seen.add(k)
+      verts.push(p)
+    }
+  }
+  return verts
+}
+
+function splitTJunctions(tris: Triangle[], eps: number): Triangle[] {
+  let out = tris
+  for (let pass = 0; pass < 8; pass++) {
+    const counts = new Map<string, number>()
+    const keyOf = (p: [number, number, number], q: [number, number, number]) => {
+      const ka = vertKey(p, eps)
+      const kb = vertKey(q, eps)
+      return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
+    }
+    for (const t of out) {
+      for (const [p, q] of [
+        [t.a, t.b],
+        [t.b, t.c],
+        [t.c, t.a],
+      ] as [typeof t.a, typeof t.a][]) {
+        const k = keyOf(p, q)
+        counts.set(k, (counts.get(k) ?? 0) + 1)
+      }
+    }
+    const verts = uniqueVerts(out, eps)
+    const next: Triangle[] = []
+    let split = false
+    for (const t of out) {
+      const edges: [[number, number, number], [number, number, number], [number, number, number]][] = [
+        [t.a, t.b, t.c],
+        [t.b, t.c, t.a],
+        [t.c, t.a, t.b],
+      ]
+      let done = false
+      for (const [a, b, c] of edges) {
+        if ((counts.get(keyOf(a, b)) ?? 0) !== 1) continue
+        const ab = dist3(a, b)
+        if (ab < eps) continue
+        let hit: [number, number, number] | null = null
+        let bestT = 2
+        for (const p of verts) {
+          if (!onSegment(p, a, b, eps)) continue
+          const tval = dist3(a, p) / ab
+          if (tval < bestT) {
+            bestT = tval
+            hit = p
+          }
+        }
+        if (!hit) continue
+        next.push({ n: t.n, a, b: hit, c }, { n: t.n, a: hit, b, c })
+        split = true
+        done = true
+        break
+      }
+      if (!done) next.push(t)
+    }
+    out = next
+    if (!split) break
+  }
+  return out
+}
+
+function dedupeTris(tris: Triangle[], eps: number): Triangle[] {
+  const seen = new Set<string>()
+  const out: Triangle[] = []
+  for (const t of tris) {
+    if (triArea2(t) < eps * eps * 1e-4) continue
+    const keys = [vertKey(t.a, eps), vertKey(t.b, eps), vertKey(t.c, eps)].sort()
+    const id = keys.join('|')
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(t)
+  }
+  return out
+}
+
+function triArea2(t: Triangle): number {
+  const ux = t.b[0] - t.a[0]
+  const uy = t.b[1] - t.a[1]
+  const uz = t.b[2] - t.a[2]
+  const vx = t.c[0] - t.a[0]
+  const vy = t.c[1] - t.a[1]
+  const vz = t.c[2] - t.a[2]
+  const nx = uy * vz - uz * vy
+  const ny = uz * vx - ux * vz
+  const nz = ux * vy - uy * vx
+  return nx * nx + ny * ny + nz * nz
+}
+
+function ringArea(ring: { x: number; y: number }[]): number {
+  let a = 0
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i]
+    const q = ring[(i + 1) % ring.length]
+    if (!p || !q) continue
+    a += p.x * q.y - q.x * p.y
+  }
+  return Math.abs(a) / 2
+}
+
+/** Weld nearby vertices and cap leftover planar holes so slicers see a solid. */
+export function repairMesh(tris: Triangle[], eps = 1e-4, maxCapArea = 0.5): Triangle[] {
+  const welded: Triangle[] = []
+  for (const t of tris) {
+    const a = snapVert(t.a, eps)
+    const b = snapVert(t.b, eps)
+    const c = snapVert(t.c, eps)
+    const next = { n: t.n, a, b, c }
+    if (triArea2(next) < eps * eps * 1e-4) continue
+    welded.push(next)
+  }
+  const split = dedupeTris(splitTJunctions(welded, eps), eps)
+  type Edge = { a: [number, number, number]; b: [number, number, number] }
+  const counts = new Map<string, { n: number; e: Edge }>()
+  const keyOf = (p: [number, number, number], q: [number, number, number]) => {
+    const ka = vertKey(p, eps)
+    const kb = vertKey(q, eps)
+    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`
+  }
+  for (const t of split) {
+    for (const [p, q] of [
+      [t.a, t.b],
+      [t.b, t.c],
+      [t.c, t.a],
+    ] as [typeof t.a, typeof t.a][]) {
+      const k = keyOf(p, q)
+      const prev = counts.get(k)
+      if (prev) prev.n += 1
+      else counts.set(k, { n: 1, e: { a: p, b: q } })
+    }
+  }
+  const open: Edge[] = []
+  for (const v of counts.values()) {
+    if (v.n === 1) open.push(v.e)
+  }
+  if (open.length < 3) return split
+  const adj = new Map<string, [number, number, number][]>()
+  const add = (p: [number, number, number], q: [number, number, number]) => {
+    const k = vertKey(p, eps)
+    const list = adj.get(k) ?? []
+    list.push(q)
+    adj.set(k, list)
+  }
+  for (const e of open) {
+    add(e.a, e.b)
+    add(e.b, e.a)
+  }
+  const usedEdges = new Set<string>()
+  const caps: Triangle[] = []
+  const take = (p: [number, number, number], from: string | null) => {
+    const ns = adj.get(vertKey(p, eps)) ?? []
+    for (const q of ns) {
+      const ek = keyOf(p, q)
+      if (usedEdges.has(ek)) continue
+      if (from && vertKey(q, eps) === from) continue
+      usedEdges.add(ek)
+      return q
+    }
+    return null
+  }
+  for (const e of open) {
+    const sk = keyOf(e.a, e.b)
+    if (usedEdges.has(sk)) continue
+    usedEdges.add(sk)
+    const start = e.a
+    const loop: [number, number, number][] = [start, e.b]
+    let cur = e.b
+    let prevK = vertKey(start, eps)
+    let guard = 0
+    while (guard++ < 4000) {
+      if (vertKey(cur, eps) === vertKey(start, eps) && loop.length > 2) break
+      const nxt = take(cur, prevK)
+      if (!nxt) break
+      prevK = vertKey(cur, eps)
+      cur = nxt
+      loop.push(cur)
+    }
+    if (loop.length >= 4 && vertKey(loop[0]!, eps) === vertKey(loop[loop.length - 1]!, eps)) {
+      loop.pop()
+    }
+    if (loop.length < 3) continue
+    const z0 = loop[0]?.[2]
+    if (z0 === undefined || loop.some((p) => Math.abs(p[2] - z0) > eps * 2)) continue
+    const ring = loop.map((p) => ({ x: p[0], y: p[1] }))
+    if (ringArea(ring) > maxCapArea) continue
+    caps.push(...capFaces(ring, [], z0, true, false))
+  }
+  return dedupeTris([...split, ...caps], eps)
 }
 
 /** Mirror X around a center. */

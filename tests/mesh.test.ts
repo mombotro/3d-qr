@@ -6,10 +6,11 @@ import {
   flipFaceToBed,
   flipMeshX,
   meshBBox,
-  originPins,
   placeOnBed,
+  repairMesh,
   stampPockets,
 } from '../src/mesh'
+import { extrudeRing } from '../src/extrude'
 import { readBinaryStl } from '../src/stl'
 import { rectPoly, squarePoly } from '../src/shapes'
 import { pointInPolygon } from '../src/offset'
@@ -68,27 +69,92 @@ describe('mesh transforms', () => {
   })
 })
 
-describe('originPins', () => {
-  it('puts a pad in each AABB corner', () => {
-    const pins = originPins(80, 50)
-    const box = meshBBox(pins)
-    expect(box.minX).toBeCloseTo(0)
-    expect(box.minY).toBeCloseTo(0)
-    expect(box.maxX).toBeCloseTo(80)
-    expect(box.maxY).toBeCloseTo(50)
-    expect(box.maxZ).toBeCloseTo(0.2)
+describe('repairMesh', () => {
+  it('caps a box that is missing its top and bottom', () => {
+    const walls = extrudeRing(
+      [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 8 },
+        { x: 0, y: 8 },
+      ],
+      [],
+      0,
+      2,
+    ).filter((t) => {
+      const zs = [t.a[2], t.b[2], t.c[2]]
+      return Math.min(...zs) < 0.5 && Math.max(...zs) > 1.5
+    })
+    const fixed = repairMesh(walls, 1e-4, Infinity)
+    const counts = new Map<string, number>()
+    const key = (p: number[], q: number[]) => {
+      const a = p.map((n) => n.toFixed(4)).join(',')
+      const b = q.map((n) => n.toFixed(4)).join(',')
+      return a < b ? `${a}|${b}` : `${b}|${a}`
+    }
+    for (const t of fixed) {
+      for (const [p, q] of [
+        [t.a, t.b],
+        [t.b, t.c],
+        [t.c, t.a],
+      ]) {
+        const k = key(p, q)
+        counts.set(k, (counts.get(k) ?? 0) + 1)
+      }
+    }
+    const open = [...counts.values()].filter((n) => n !== 2).length
+    expect(fixed.length).toBeGreaterThan(walls.length)
+    expect(open).toBe(0)
   })
+})
 
-  it('aligns a small black mesh to a larger white plate box', () => {
-    const white = originPins(80, 50)
-    const black = originPins(10, 10)
-    const aligned = alignExportOrigin(black, white)
-    const b = meshBBox(aligned.black)
+describe('alignExportOrigin', () => {
+  it('shifts both meshes to the white min corner without extra pads', () => {
+    const plate = extrudeRing(
+      [
+        { x: 0, y: 0 },
+        { x: 80, y: 0 },
+        { x: 80, y: 50 },
+        { x: 0, y: 50 },
+      ],
+      [],
+      0,
+      2,
+    )
+    const qr = extrudeRing(
+      [
+        { x: 20, y: 15 },
+        { x: 40, y: 15 },
+        { x: 40, y: 35 },
+        { x: 20, y: 35 },
+      ],
+      [],
+      0,
+      0.6,
+    )
+    const aligned = alignExportOrigin(
+      qr.map((t) => ({
+        ...t,
+        a: [t.a[0] + 3, t.a[1] + 2, t.a[2]] as [number, number, number],
+        b: [t.b[0] + 3, t.b[1] + 2, t.b[2]] as [number, number, number],
+        c: [t.c[0] + 3, t.c[1] + 2, t.c[2]] as [number, number, number],
+      })),
+      plate.map((t) => ({
+        ...t,
+        a: [t.a[0] + 3, t.a[1] + 2, t.a[2]] as [number, number, number],
+        b: [t.b[0] + 3, t.b[1] + 2, t.b[2]] as [number, number, number],
+        c: [t.c[0] + 3, t.c[1] + 2, t.c[2]] as [number, number, number],
+      })),
+    )
     const w = meshBBox(aligned.white)
-    expect(b.minX).toBeCloseTo(w.minX)
-    expect(b.minY).toBeCloseTo(w.minY)
-    expect(b.maxX).toBeCloseTo(w.maxX)
-    expect(b.maxY).toBeCloseTo(w.maxY)
+    const b = meshBBox(aligned.black)
+    expect(w.minX).toBeCloseTo(0)
+    expect(w.minY).toBeCloseTo(0)
+    expect(w.maxX).toBeCloseTo(80)
+    expect(w.maxY).toBeCloseTo(50)
+    expect(b.minX).toBeCloseTo(20)
+    expect(b.minY).toBeCloseTo(15)
+    expect(b.maxX).toBeCloseTo(40)
   })
 })
 
