@@ -266,13 +266,13 @@ function cassetteSolidPlate(
   const zTop = CASSETTE_PLATE_T_MM
   const zWin = Math.max(zQr, CASSETTE_WINDOW_DEPTH_MM)
   const window = clipWindowToFrame(windowPocket, frame)
+  const inner = frame ? frame.hole : outline
   const clips: ClipPolygon[] = [
     ...throughHoles.map((h) => [toRing(h)]),
     ...qrPockets.map((p) => [toRing(p)]),
     [toRing(window)],
-    ...(frame ? [[toRing(frame.outer), toRing(frame.hole)]] : []),
   ]
-  const fill = difference([toRing(outline)], ...unionMany(clips))
+  const fill = difference([toRing(inner)], ...unionMany(clips))
   const tris: Triangle[] = []
   for (const piece of clipPieces(fill)) {
     tris.push(...capFaces(piece.outer, piece.holes, z0, false))
@@ -281,18 +281,17 @@ function cassetteSolidPlate(
       tris.push(...ringWalls(hole, z0, zQr, false))
     }
   }
-  const qrCeilClips = [
-    ...qrPockets.map((p) => [toRing(p)] as ClipPolygon),
-    ...(frame ? [[toRing(frame.outer), toRing(frame.hole)] as ClipPolygon] : []),
-  ]
-  if (qrCeilClips.length) {
+  if (qrPockets.length) {
     const qrCeil = difference(
-      unionMany(qrCeilClips),
+      unionMany(qrPockets.map((p) => [toRing(p)])),
       ...throughHoles.map((h) => [toRing(h)]),
     )
     for (const piece of clipPieces(qrCeil)) {
       tris.push(...capFaces(piece.outer, piece.holes, zQr, false))
     }
+  }
+  if (frame) {
+    tris.push(...capFaces(frame.outer, [frame.hole, ...throughHoles], zQr, false))
   }
   if (zWin > zQr + 1e-6) {
     tris.push(...ringWalls(window, zQr, zWin, false))
