@@ -17,16 +17,20 @@ import { dogtagHole, modulePoly, plateFrameAt, plateOutlineAt, type Polygon } fr
 import {
   CASSETTE_ASPECT,
   CASSETTE_HEAD_STRIP_RAISE_MM,
+  CASSETTE_HEIGHT_MM,
   CASSETTE_LIP_H_MM,
   CASSETTE_PLATE_T_MM,
+  CASSETTE_WIDTH_MM,
+  CASSETTE_WINDOW_DEPTH_MM,
+  cassetteChannelInnerPoly,
+  cassetteChannelPoly,
   cassetteCornerHoles,
-  cassetteFaceWells,
   cassetteFrame,
   cassetteHeadStrip,
   cassetteLipPoly,
   cassetteOutline,
   cassettePlate,
-  type CassetteFaceShape,
+  cassetteWindowPoly,
 } from './cassette'
 import type { CassetteKit } from './cassetteParts'
 import { maskToPlacedShapes, textToShapes } from './text'
@@ -193,11 +197,6 @@ export function buildBodies(
       : isShaped && tagPlate
         ? customFrame(tagPlate, layout.widthMm, layout.frameMm)
         : plateFrameAt(layout.shape, layout.widthMm, layout.heightMm, layout.frameMm)
-  const faceWells = settings.plateShape === 'cassette' ? cassetteFaceWells() : []
-  const faceClips: ClipPolygon[] = faceWells.map((w) => [
-    toRing(w.outer),
-    ...w.holes.map((h) => toRing(h)),
-  ])
   const holeClips: ClipPolygon[] = (scaled?.holes ?? []).map((h) => [toRing(h)])
   const extra = extraQrGeom(settings, tagHeight, extraLogoMasks)
   const modulesPolys = [...blackModulePolys(settings, modules, layout), ...extra.modules]
@@ -254,7 +253,6 @@ export function buildBodies(
     ...(subtractFrame ? [[toRing(subtractFrame.outer), toRing(subtractFrame.hole)]] : []),
     ...grownModules.map((p) => [toRing(p)]),
     ...svgHoles.map((h) => [toRing(h)]),
-    ...faceClips,
     ...stampClips,
   ]
   if (tagHole) clips.push([toRing(tagHole.poly)])
@@ -273,8 +271,10 @@ export function buildBodies(
       settings.blackHeightMm,
       settings.cassetteLid,
       subtractFrame,
-      faceWells,
       stampClips,
+      !settings.cassetteLid && settings.cassetteBackRaised,
+      settings.cassetteAccess,
+      !settings.cassetteLid && settings.cassetteBackWindow,
     )
     const aligned = alignExportOrigin(black, white, repair)
     const whiteOnOrigin = aligned.white
@@ -337,21 +337,23 @@ function cassetteSolidPlate(
   zQr: number,
   withLip: boolean,
   frame: { outer: Polygon; hole: Polygon } | null,
-  faceWells: CassetteFaceShape[] = [],
   extraPockets: ClipPolygon[] = [],
+  backRaised = false,
+  headWell = false,
+  backWindow = false,
 ): Triangle[] {
   const z0 = 0
   const zTop = CASSETTE_PLATE_T_MM
   const holeClips = throughHoles.map((h) => [toRing(h)] as ClipPolygon)
-  const wellKeep = [toRing(insetPolygon(outline, 0.05))]
-  const trimmedWells = faceWells.flatMap((w) =>
-    clipPieces(intersection([toRing(w.outer)], wellKeep)).map(
-      (piece) => [toRing(piece.outer), ...piece.holes.map((h) => toRing(h))] as ClipPolygon,
-    ),
-  )
+  const headKeep = [toRing(insetPolygon(outline, 0.05))]
+  const headWells = headWell
+    ? clipPieces(
+        intersection([toRing(cassetteChannelPoly()), toRing(cassetteChannelInnerPoly())], headKeep),
+      ).map((piece) => [toRing(piece.outer), ...piece.holes.map((h) => toRing(h))] as ClipPolygon)
+    : []
   const pockets: ClipPolygon[] = [
     ...qrPockets.map((p) => [toRing(p)] as ClipPolygon),
-    ...trimmedWells,
+    ...headWells,
     ...extraPockets,
   ]
   if (frame) pockets.push([toRing(frame.outer), toRing(frame.hole)])
@@ -382,22 +384,59 @@ function cassetteSolidPlate(
   const holesInLip = lip
     ? throughHoles.filter((h) => pointInPolygon(ringCentroid(h), lip))
     : []
-  const holesInRim = lip
-    ? throughHoles.filter((h) => !pointInPolygon(ringCentroid(h), lip))
-    : throughHoles
   const zBack = lip ? zTop + CASSETTE_LIP_H_MM : zTop
   if (lip) {
+    const holesInRim = throughHoles.filter((h) => !pointInPolygon(ringCentroid(h), lip))
     tris.push(...capFaces(outline, [...holesInRim, lip], zTop, true, false))
     tris.push(...capFaces(lip, holesInLip, zBack, true, false))
     tris.push(...ringWalls(lip, zTop, zBack, true))
   } else {
-    tris.push(...capFaces(outline, throughHoles, zTop, true, false))
+    const wellKeep = [toRing(insetPolygon(outline, 0.05))]
+    const backWellUnion = backWindow
+      ? unionMany(
+          clipPieces(intersection([toRing(cassetteWindowPoly())], wellKeep)).map(
+            (piece) => [toRing(piece.outer), ...piece.holes.map((h) => toRing(h))] as ClipPolygon,
+          ),
+        )
+      : []
+    const strip = backRaised
+      ? cassetteHeadStrip(CASSETTE_WIDTH_MM, CASSETTE_HEIGHT_MM)
+      : null
+    const boss = strip ? [[toRing(strip)]] : []
+    const backCuts = [...holeClips, ...boss, ...backWellUnion]
+    const backFill =
+      backCuts.length === 0
+        ? [[toRing(outline)]]
+        : difference([toRing(outline)], ...unionMany(backCuts))
+    for (const piece of clipPieces(backFill)) {
+      tris.push(...capFaces(piece.outer, piece.holes, zTop, true, false))
+    }
+    if (backWellUnion.length) {
+      const wellDepth = Math.min(CASSETTE_WINDOW_DEPTH_MM, Math.max(0.2, zTop - zQr - 0.2))
+      const zWell = zTop - wellDepth
+      const wellFloors = holeClips.length ? difference(backWellUnion, ...holeClips) : backWellUnion
+      for (const piece of clipPieces(wellFloors)) {
+        tris.push(...capFaces(piece.outer, piece.holes, zWell, false, false))
+        tris.push(...ringWalls(piece.outer, zWell, zTop, true))
+        for (const hole of piece.holes) {
+          tris.push(...ringWalls(hole, zWell, zTop, false))
+        }
+      }
+    }
+    if (boss.length) {
+      const zRaise = zTop + CASSETTE_HEAD_STRIP_RAISE_MM
+      for (const piece of clipPieces(boss)) {
+        tris.push(...capFaces(piece.outer, piece.holes, zRaise, true, false))
+        tris.push(...ringWalls(piece.outer, zTop, zRaise, true))
+        for (const hole of piece.holes) {
+          tris.push(...ringWalls(hole, zTop, zRaise, false))
+        }
+      }
+    }
   }
-  for (const hole of holesInRim) {
-    tris.push(...ringWalls(hole, zQr, zTop, false))
-  }
-  for (const hole of holesInLip) {
-    tris.push(...ringWalls(hole, zQr, zBack, false))
+  for (const hole of throughHoles) {
+    const top = lip && pointInPolygon(ringCentroid(hole), lip) ? zBack : zTop
+    tris.push(...ringWalls(hole, zQr, top, false))
   }
   return tris
 }

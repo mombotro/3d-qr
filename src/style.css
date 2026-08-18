@@ -271,7 +271,8 @@ ol li {
   content: 'v';
 }
 
-.cassette-opts[hidden] {
+.cassette-opts[hidden],
+#cassFlatBack[hidden] {
   display: none;
 }
 

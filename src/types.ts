@@ -35,6 +35,8 @@ export type QrSettings = {
   cassetteSlider: boolean
   cassetteFlipSlider: boolean
   cassetteAccess: boolean
+  cassetteBackRaised: boolean
+  cassetteBackWindow: boolean
   extraQrs: ExtraQrStamp[]
   blackTexts: BlackTextStamp[]
   blackImages: BlackImageStamp[]

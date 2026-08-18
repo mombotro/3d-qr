@@ -109,7 +109,7 @@ describe('repairMesh', () => {
 })
 
 describe('alignExportOrigin', () => {
-  it('shifts both meshes to the white min corner without extra pads', () => {
+  it('shifts both meshes to the white min corner and matches the XY box', () => {
     const plate = extrudeRing(
       [
         { x: 0, y: 0 },
@@ -152,9 +152,10 @@ describe('alignExportOrigin', () => {
     expect(w.minY).toBeCloseTo(0)
     expect(w.maxX).toBeCloseTo(80)
     expect(w.maxY).toBeCloseTo(50)
-    expect(b.minX).toBeCloseTo(20)
-    expect(b.minY).toBeCloseTo(15)
-    expect(b.maxX).toBeCloseTo(40)
+    expect(b.minX).toBeCloseTo(0)
+    expect(b.minY).toBeCloseTo(0)
+    expect(b.maxX).toBeCloseTo(80)
+    expect(b.maxY).toBeCloseTo(50)
   })
 })
 

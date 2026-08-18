@@ -1,5 +1,5 @@
 import { difference, union, type Pair, type Polygon as ClipPolygon } from 'polygon-clipping'
-import { capFaces, ringWalls, type Triangle } from './extrude'
+import { capFaces, extrudeRing, ringWalls, type Triangle } from './extrude'
 import type { Polygon } from './shapes'
 
 export type BBox = {
@@ -76,15 +76,76 @@ export function placeOnBed(tris: Triangle[]): Triangle[] {
   return translateMesh(tris, -b.minX, -b.minY, -b.minZ)
 }
 
-/** Shift both meshes to the plate min corner. */
+/** Tiny pads on the AABB edges so both files share one XY box. Off the bed face. */
+export function originExtents(
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+  z0: number,
+  z1: number,
+): Triangle[] {
+  const s = 0.8
+  const midX = (minX + maxX) / 2
+  const midY = (minY + maxY) / 2
+  const pad = (x: number, y: number) =>
+    extrudeRing(
+      [
+        { x, y },
+        { x: x + s, y },
+        { x: x + s, y: y + s },
+        { x, y: y + s },
+      ],
+      [],
+      z0,
+      z1,
+    )
+  return [
+    ...pad(minX, midY - s / 2),
+    ...pad(maxX - s, midY - s / 2),
+    ...pad(midX - s / 2, minY),
+    ...pad(midX - s / 2, maxY - s),
+  ]
+}
+
+function needsExtents(inner: BBox, outer: BBox): boolean {
+  return (
+    inner.minX > outer.minX + 0.05 ||
+    inner.maxX < outer.maxX - 0.05 ||
+    inner.minY > outer.minY + 0.05 ||
+    inner.maxY < outer.maxY - 0.05
+  )
+}
+
+/** Shift both meshes to the plate min corner and give them the same XY box. */
 export function alignExportOrigin(
   black: Triangle[],
   white: Triangle[],
   repair = true,
 ): { black: Triangle[]; white: Triangle[] } {
   const box = meshBBox(white)
-  const movedBlack = translateMesh(black, -box.minX, -box.minY, -box.minZ)
-  const movedWhite = translateMesh(white, -box.minX, -box.minY, -box.minZ)
+  let movedBlack = translateMesh(black, -box.minX, -box.minY, -box.minZ)
+  let movedWhite = translateMesh(white, -box.minX, -box.minY, -box.minZ)
+  const w = meshBBox(movedWhite)
+  const b = meshBBox(movedBlack)
+  const union: BBox = {
+    minX: Math.min(b.minX, w.minX),
+    maxX: Math.max(b.maxX, w.maxX),
+    minY: Math.min(b.minY, w.minY),
+    maxY: Math.max(b.maxY, w.maxY),
+    minZ: Math.min(b.minZ, w.minZ),
+    maxZ: Math.max(b.maxZ, w.maxZ),
+  }
+  if (needsExtents(b, union)) {
+    const z1 = Math.max(b.maxZ, 0.2)
+    const z0 = Math.max(0, z1 - 0.2)
+    movedBlack = [...movedBlack, ...originExtents(union.minX, union.maxX, union.minY, union.maxY, z0, z1)]
+  }
+  if (needsExtents(w, union)) {
+    const z1 = Math.max(w.maxZ, 0.2)
+    const z0 = Math.max(0, z1 - 0.2)
+    movedWhite = [...movedWhite, ...originExtents(union.minX, union.maxX, union.minY, union.maxY, z0, z1)]
+  }
   if (!repair) return { black: movedBlack, white: movedWhite }
   return {
     black: repairMesh(movedBlack),

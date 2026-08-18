@@ -1,7 +1,6 @@
 import { buildBodies, type ExtraStl } from './bodies'
 import type { CustomPlate } from './contour'
 import { maskToCustomPlate } from './contour'
-import { makeLayout } from './layout'
 import { canEncode, encodeQr } from './encode'
 import { clampLogoPercent, thresholdMask } from './logo'
 import { rewriteSvgPixelSize, svgRasterSize } from './svgSize'
@@ -242,12 +241,12 @@ export function mountApp(root: HTMLElement): void {
         <div class="toggles">
           <label><input id="cassSlider" type="checkbox" checked /> slider slots</label>
           <label><input id="cassFlip" type="checkbox" /> flip slider side</label>
-          <label><input id="cassAccess" type="checkbox" checked /> window piece</label>
+          <label><input id="cassAccess" type="checkbox" checked /> inset head</label>
         </div>
-        <p class="hint">
-          QR prints on the top face, face down. The slider covers the extra hole so a scan
-          can still read.
-        </p>
+        <div id="cassFlatBack" class="toggles" style="margin-top:0.75rem">
+          <label><input id="cassRaised" type="checkbox" checked /> raised head</label>
+          <label><input id="cassBackWindow" type="checkbox" checked /> middle window</label>
+        </div>
       </div>
     </section>
 
@@ -312,6 +311,9 @@ export function mountApp(root: HTMLElement): void {
   const cassSlider = root.querySelector<HTMLInputElement>('#cassSlider')!
   const cassFlip = root.querySelector<HTMLInputElement>('#cassFlip')!
   const cassAccess = root.querySelector<HTMLInputElement>('#cassAccess')!
+  const cassFlatBack = root.querySelector<HTMLElement>('#cassFlatBack')!
+  const cassRaised = root.querySelector<HTMLInputElement>('#cassRaised')!
+  const cassBackWindow = root.querySelector<HTMLInputElement>('#cassBackWindow')!
   const printSteps = root.querySelector<HTMLOListElement>('#printSteps')!
   const black = root.querySelector<HTMLInputElement>('#black')!
   const cap = root.querySelector<HTMLInputElement>('#cap')!
@@ -385,6 +387,8 @@ export function mountApp(root: HTMLElement): void {
       cassetteSlider: cassSlider.checked,
       cassetteFlipSlider: cassFlip.checked,
       cassetteAccess: cassAccess.checked,
+      cassetteBackRaised: cassRaised.checked,
+      cassetteBackWindow: cassBackWindow.checked,
       extraQrs: readExtraQrs(),
       blackTexts: readTextStamps(),
       blackImages: readImageStamps(),
@@ -578,6 +582,9 @@ export function mountApp(root: HTMLElement): void {
     cassFlip.checked = settings.cassetteFlipSlider
     cassFlip.disabled = !settings.cassetteSlider
     cassAccess.checked = settings.cassetteAccess
+    cassRaised.checked = settings.cassetteBackRaised
+    cassBackWindow.checked = settings.cassetteBackWindow
+    cassFlatBack.hidden = settings.cassetteLid
     const topVal = settings.cassetteLid ? 'lid' : 'flat'
     for (const radio of root.querySelectorAll<HTMLInputElement>('input[name="cassTop"]')) {
       radio.checked = radio.value === topVal
@@ -707,44 +714,16 @@ export function mountApp(root: HTMLElement): void {
     const matrix = encodeQr(settings.content, settings.hasLogo)
     settings.logoSizePercent = clampLogoPercent(settings.logoSizePercent, matrix.size)
     logoSize.max = String(clampLogoPercent(50, matrix.size))
-    const layout = makeLayout(
-      settings.widthMm,
-      matrix.size,
-      settings.plateShape,
-      settings.heightMm,
-      settings.qrOffsetXMm,
-      settings.qrOffsetYMm,
-      settings.dogtagHole,
-      settings.holeDiameterMm,
-      settings.qrSizePercent,
-    )
-    settings.qrOffsetXMm = layout.qrOffsetXMm
-    settings.qrOffsetYMm = layout.qrOffsetYMm
-    settings.qrSizePercent = Math.round(layout.qrSizePercent)
     settings.extraQrs = settings.extraQrs.map((stamp, i) => {
       const text = stamp.content.trim()
       const hasLogo = extraHasLogo(stamp, i)
       if (!text || !canEncode(text, hasLogo)) return stamp
       const extra = encodeQr(text, hasLogo)
-      const extraLayout = makeLayout(
-        settings.widthMm,
-        extra.size,
-        settings.plateShape,
-        settings.heightMm,
-        stamp.xMm,
-        stamp.yMm,
-        settings.dogtagHole,
-        settings.holeDiameterMm,
-        stamp.sizePercent,
-      )
       const logoIn = rowLogoSizeInput(i)
       const logoMax = clampLogoPercent(50, extra.size)
       if (logoIn) logoIn.max = String(logoMax)
       return {
         ...stamp,
-        xMm: extraLayout.qrOffsetXMm,
-        yMm: extraLayout.qrOffsetYMm,
-        sizePercent: Math.round(extraLayout.qrSizePercent),
         logoSizePercent: clampLogoPercent(stamp.logoSizePercent, extra.size),
       }
     })
@@ -811,6 +790,8 @@ export function mountApp(root: HTMLElement): void {
   cassSlider.addEventListener('change', () => requestRebuild(true))
   cassFlip.addEventListener('change', () => requestRebuild(true))
   cassAccess.addEventListener('change', () => requestRebuild(true))
+  cassRaised.addEventListener('change', () => requestRebuild(true))
+  cassBackWindow.addEventListener('change', () => requestRebuild(true))
   for (const radio of root.querySelectorAll<HTMLInputElement>('input[name="cassTop"]')) {
     radio.addEventListener('change', () => requestRebuild(true))
   }
@@ -853,7 +834,10 @@ export function mountApp(root: HTMLElement): void {
     requestRebuild(true)
   })
   addQr.addEventListener('click', () => {
-    renderQrList([...readExtraQrs(), defaultExtraQr()])
+    const stamp = defaultExtraQr()
+    const size = Number(qrSize.value)
+    if (Number.isFinite(size)) stamp.sizePercent = size
+    renderQrList([...readExtraQrs(), stamp])
     extraLogoMasks.push(undefined)
     requestRebuild(true)
   })
@@ -868,7 +852,11 @@ export function mountApp(root: HTMLElement): void {
     requestRebuild(true)
   })
   addText.addEventListener('click', () => {
-    renderTextList([...readTextStamps(), defaultTextStamp()])
+    const prev = readTextStamps()
+    const stamp = defaultTextStamp()
+    const last = prev[prev.length - 1]
+    if (last) stamp.sizeMm = last.sizeMm
+    renderTextList([...prev, stamp])
     requestRebuild(true)
   })
   imageList.addEventListener('input', () => requestRebuild())
@@ -906,7 +894,11 @@ export function mountApp(root: HTMLElement): void {
     requestRebuild(true)
   })
   addImage.addEventListener('click', () => {
-    renderImageList([...readImageStamps(), defaultImageStamp()])
+    const prev = readImageStamps()
+    const stamp = defaultImageStamp()
+    const last = prev[prev.length - 1]
+    if (last) stamp.sizeMm = last.sizeMm
+    renderImageList([...prev, stamp])
     imageMasks.push(undefined)
     requestRebuild(true)
   })

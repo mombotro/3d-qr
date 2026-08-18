@@ -1,4 +1,3 @@
-import { dogtagHole } from './shapes'
 import {
   FRAME_MODULES,
   QUIET_ZONE_MODULES,
@@ -114,38 +113,6 @@ function moduleMmFor(
   return short / (content + frameBoth)
 }
 
-export function clampQrOffset(
-  shape: PlateShape,
-  widthMm: number,
-  heightMm: number,
-  frameMm: number,
-  contentMm: number,
-  offsetXMm: number,
-  offsetYMm: number,
-  hasDogtagHole = false,
-  holeDiameterMm = 4,
-): { x: number; y: number } {
-  const maxX = Math.max(0, (widthMm - 2 * frameMm - contentMm) / 2)
-  const maxY = Math.max(0, (heightMm - 2 * frameMm - contentMm) / 2)
-  let minX = -maxX
-  let minY = -maxY
-  const xMax = maxX
-  const yMax = maxY
-  if (hasDogtagHole) {
-    const hole = dogtagHole(widthMm, heightMm, holeDiameterMm)
-    const clear = hole.diameter / 2 + 1.5 + contentMm / 2
-    if (widthMm >= heightMm) {
-      minX = Math.max(minX, hole.cx + clear - widthMm / 2)
-    } else {
-      minY = Math.max(minY, hole.cy + clear - heightMm / 2)
-    }
-  }
-  return {
-    x: Math.min(xMax, Math.max(minX, offsetXMm)),
-    y: Math.min(yMax, Math.max(minY, offsetYMm)),
-  }
-}
-
 export function makeLayout(
   sizeMm: number,
   matrixSize: number,
@@ -163,56 +130,10 @@ export function makeLayout(
   const bounds = plateBounds(shape, sizeMm, tagHeight)
   const widthMm = bounds.widthMm
   const plateHeight = bounds.heightMm
-  const content100 = (matrixSize + 2 * QUIET_ZONE_MODULES) * fullModule
-  const guess = clampQrOffset(
-    shape,
-    widthMm,
-    plateHeight,
-    frameMm,
-    content100,
-    offsetXMm,
-    offsetYMm,
-    hasDogtagHole,
-    holeDiameterMm,
-  )
-  const maxContent = maxContentAtOffset(
-    widthMm,
-    plateHeight,
-    frameMm,
-    guess.x,
-    guess.y,
-    hasDogtagHole,
-    holeDiameterMm,
-  )
-  const minQuiet = 1
   const asked = Math.min(2, Math.max(0.4, qrSizePercent / 100))
-  let moduleMm = fullModule * asked
-  let quiet = QUIET_ZONE_MODULES
-  let contentMm = (matrixSize + 2 * quiet) * moduleMm
-  if (asked > 1) {
-    quiet = (maxContent / moduleMm - matrixSize) / 2
-    if (quiet < minQuiet) {
-      quiet = minQuiet
-      moduleMm = maxContent / (matrixSize + 2 * minQuiet)
-    }
-    contentMm = (matrixSize + 2 * quiet) * moduleMm
-  } else if (contentMm > maxContent) {
-    moduleMm = maxContent / (matrixSize + 2 * quiet)
-    contentMm = (matrixSize + 2 * quiet) * moduleMm
-  }
-  const matrixMm = matrixSize * moduleMm
-  const edgeMm = moduleMm
-  const shift = clampQrOffset(
-    shape,
-    widthMm,
-    plateHeight,
-    edgeMm,
-    matrixMm,
-    offsetXMm,
-    offsetYMm,
-    hasDogtagHole,
-    holeDiameterMm,
-  )
+  const moduleMm = fullModule * asked
+  const quiet = QUIET_ZONE_MODULES
+  const contentMm = (matrixSize + 2 * quiet) * moduleMm
   return {
     shape,
     widthMm,
@@ -221,38 +142,12 @@ export function makeLayout(
     frameMm,
     quietZoneMm: quiet * moduleMm,
     matrixSize,
-    matrixOriginX: (widthMm - contentMm) / 2 + quiet * moduleMm + shift.x,
-    matrixOriginY: (plateHeight - contentMm) / 2 + quiet * moduleMm + shift.y,
-    qrOffsetXMm: shift.x,
-    qrOffsetYMm: shift.y,
-    qrSizePercent: fullModule > 0 ? (moduleMm / fullModule) * 100 : 100,
+    matrixOriginX: (widthMm - contentMm) / 2 + quiet * moduleMm + offsetXMm,
+    matrixOriginY: (plateHeight - contentMm) / 2 + quiet * moduleMm + offsetYMm,
+    qrOffsetXMm: offsetXMm,
+    qrOffsetYMm: offsetYMm,
+    qrSizePercent: asked * 100,
   }
-}
-
-function maxContentAtOffset(
-  widthMm: number,
-  heightMm: number,
-  frameMm: number,
-  offsetXMm: number,
-  offsetYMm: number,
-  hasHole: boolean,
-  holeDiameterMm: number,
-): number {
-  const cx = widthMm / 2 + offsetXMm
-  const cy = heightMm / 2 + offsetYMm
-  const maxW = 2 * Math.min(cx - frameMm, widthMm - frameMm - cx)
-  const maxH = 2 * Math.min(cy - frameMm, heightMm - frameMm - cy)
-  let maxC = Math.max(0, Math.min(maxW, maxH))
-  if (hasHole) {
-    const hole = dogtagHole(widthMm, heightMm, holeDiameterMm)
-    const clear = hole.diameter / 2 + 1.5
-    if (widthMm >= heightMm) {
-      maxC = Math.min(maxC, 2 * Math.max(0, cx - hole.cx - clear))
-    } else {
-      maxC = Math.min(maxC, 2 * Math.max(0, cy - hole.cy - clear))
-    }
-  }
-  return maxC
 }
 
 export function moduleOrigin(layout: Layout, row: number, col: number): { x: number; y: number } {

@@ -103,6 +103,8 @@ export function defaultSettings(): QrSettings {
     cassetteSlider: true,
     cassetteFlipSlider: false,
     cassetteAccess: true,
+    cassetteBackRaised: true,
+    cassetteBackWindow: true,
     extraQrs: [],
     blackTexts: [],
     blackImages: [],
@@ -112,7 +114,7 @@ export function defaultSettings(): QrSettings {
 export function defaultExtraQr(): ExtraQrStamp {
   return {
     content: '',
-    sizePercent: 50,
+    sizePercent: LIMITS.qrSizePercent.default,
     xMm: 16,
     yMm: 0,
     blankLogo: false,
@@ -322,6 +324,8 @@ export function clampSettings(raw: Partial<QrSettings>): QrSettings {
     cassetteSlider: raw.cassetteSlider ?? base.cassetteSlider,
     cassetteFlipSlider: raw.cassetteFlipSlider ?? base.cassetteFlipSlider,
     cassetteAccess: raw.cassetteAccess ?? base.cassetteAccess,
+    cassetteBackRaised: raw.cassetteBackRaised ?? base.cassetteBackRaised,
+    cassetteBackWindow: raw.cassetteBackWindow ?? base.cassetteBackWindow,
     extraQrs: clampExtraQrList(raw),
     blackTexts: clampTextList(raw),
     blackImages: clampImageList(raw),

@@ -70,14 +70,11 @@ describe('makeLayout', () => {
     expect(shifted.matrixOriginY).toBeCloseTo(centered.matrixOriginY - 3)
   })
 
-  it('can grow a QR above 100 percent until it hits the frame', () => {
+  it('honors a QR size above 100 percent', () => {
     const full = makeLayout(80, 25, 'square')
     const big = makeLayout(80, 25, 'square', undefined, 0, 0, false, 4, 150)
-    expect(big.moduleMm).toBeGreaterThan(full.moduleMm)
-    expect(big.qrSizePercent).toBeGreaterThan(100)
-    expect(big.qrSizePercent).toBeLessThanOrEqual(150)
-    const span = 25 * big.moduleMm + 2 * big.quietZoneMm + 2 * big.frameMm
-    expect(span).toBeLessThanOrEqual(80 + 1e-6)
+    expect(big.moduleMm).toBeCloseTo(full.moduleMm * 1.5)
+    expect(big.qrSizePercent).toBeCloseTo(150)
   })
 
   it('scales the QR down on every tag shape', () => {
@@ -115,17 +112,13 @@ describe('makeLayout', () => {
     expect(shifted.matrixOriginY).toBeCloseTo(centered.matrixOriginY - 3)
   })
 
-  it('clamps the offset with a one-module edge margin', () => {
+  it('keeps the requested offset even when it leaves the plate', () => {
     const centered = makeLayout(80, 25, 'rect', 50)
-    const shifted = makeLayout(80, 25, 'rect', 50, 1000, -1000)
-    const matrix = 25 * shifted.moduleMm
-    const edge = shifted.moduleMm
-    const maxX = (80 - 2 * edge - matrix) / 2
-    const maxY = (50 - 2 * edge - matrix) / 2
-    expect(shifted.qrOffsetXMm).toBeCloseTo(maxX)
-    expect(shifted.qrOffsetYMm).toBeCloseTo(-maxY)
-    expect(shifted.matrixOriginX).toBeCloseTo(centered.matrixOriginX + maxX)
-    expect(shifted.matrixOriginY).toBeCloseTo(centered.matrixOriginY - maxY)
+    const shifted = makeLayout(80, 25, 'rect', 50, 12, -8)
+    expect(shifted.qrOffsetXMm).toBe(12)
+    expect(shifted.qrOffsetYMm).toBe(-8)
+    expect(shifted.matrixOriginX).toBeCloseTo(centered.matrixOriginX + 12)
+    expect(shifted.matrixOriginY).toBeCloseTo(centered.matrixOriginY - 8)
   })
 
   it('lets a cassette QR reach a left spindle', () => {

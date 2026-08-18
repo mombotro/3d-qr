@@ -5,6 +5,7 @@ import { encodeQr } from '../src/encode'
 import { makeLayout, moduleOrigin } from '../src/layout'
 import { customFrame, maskToCustomPlate } from '../src/contour'
 import { buildBodies } from '../src/bodies'
+import { meshBBox } from '../src/mesh'
 import {
   prepareAccess,
   prepareBottomShell,
@@ -240,6 +241,21 @@ describe('buildBodies', () => {
     expect(b.minY).toBeCloseTo(0)
     expect(w.minX).toBeCloseTo(0)
     expect(w.minY).toBeCloseTo(0)
+  })
+
+  it('gives black and white the same XY box so slicers line up', () => {
+    const tag = clampSettings({
+      ...settings,
+      insetFrame: false,
+      plateShape: 'square',
+    })
+    const { black, white } = buildBodies(tag, matrix)
+    const b = meshBBox(black)
+    const w = meshBBox(white)
+    expect(b.minX).toBeCloseTo(w.minX, 1)
+    expect(b.minY).toBeCloseTo(w.minY, 1)
+    expect(b.maxX).toBeCloseTo(w.maxX, 1)
+    expect(b.maxY).toBeCloseTo(w.maxY, 1)
   })
 
 
@@ -795,6 +811,182 @@ describe('buildBodies', () => {
       expect(coversAt(z, pin)).toBe(false)
     }
     expect(coversAt(2.676, { x: 50, y: 32 })).toBe(true)
+    expect(coversAt(2, { x: 2, y: 32 })).toBe(true)
+  })
+
+  it('does not sink a window well on the QR face', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: true,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr.stl')),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { black, white } = buildBodies(tag, matrix, undefined, null, kit)
+    const atZ = (tris: typeof white, z: number) =>
+      tris.filter(
+        (t) =>
+          Math.abs(t.a[2] - z) < 0.08 &&
+          Math.abs(t.b[2] - z) < 0.08 &&
+          Math.abs(t.c[2] - z) < 0.08,
+      )
+    const covers = (tris: typeof white, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    const mid = { x: 50, y: 28.5 }
+    if (!covers(atZ(black, 0), mid)) {
+      expect(covers(atZ(white, 0), mid)).toBe(true)
+    }
+    const headRim = { x: 50, y: 48.5 }
+    if (!covers(atZ(black, 0), headRim)) {
+      expect(covers(atZ(white, 0), headRim)).toBe(false)
+      expect(covers(atZ(white, 0.6), headRim)).toBe(true)
+    }
+  })
+
+  it('omits the head inset when inset head is off', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: true,
+      cassetteAccess: false,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr.stl')),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { black, white, extras } = buildBodies(tag, matrix, undefined, null, kit)
+    expect(extras.some((e) => e.filename === 'cassette-window.stl')).toBe(false)
+    const atZ = (tris: typeof white, z: number) =>
+      tris.filter(
+        (t) =>
+          Math.abs(t.a[2] - z) < 0.08 &&
+          Math.abs(t.b[2] - z) < 0.08 &&
+          Math.abs(t.c[2] - z) < 0.08,
+      )
+    const covers = (tris: typeof white, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    const headRim = { x: 50, y: 48.5 }
+    if (!covers(atZ(black, 0), headRim)) {
+      expect(covers(atZ(white, 0), headRim)).toBe(true)
+    }
+  })
+
+  it('can raise a window and sink wells on the flat plate back', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: false,
+      cassetteBackRaised: true,
+      cassetteBackWindow: true,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr-flat.stl'), true),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { white } = buildBodies(tag, matrix, undefined, null, kit)
+    const wz = zRange(white)
+    expect(wz.max).toBeCloseTo(3, 1)
+    const atZ = (z: number) =>
+      white.filter(
+        (t) =>
+          Math.abs(t.a[2] - z) < 0.08 &&
+          Math.abs(t.b[2] - z) < 0.08 &&
+          Math.abs(t.c[2] - z) < 0.08,
+      )
+    const covers = (tris: typeof white, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    const midWindow = { x: 50, y: 28.5 }
+    expect(covers(atZ(2), midWindow)).toBe(false)
+    expect(covers(atZ(1), midWindow)).toBe(true)
+    const strip = { x: 50.055, y: 63.6 - 63.6 * 0.08 }
+    expect(covers(atZ(3), strip)).toBe(true)
+  })
+
+  it('omits the middle back window when the option is off', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: false,
+      cassetteBackRaised: false,
+      cassetteBackWindow: false,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr-flat.stl'), true),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { white } = buildBodies(tag, matrix, undefined, null, kit)
+    const atZ = (z: number) =>
+      white.filter(
+        (t) =>
+          Math.abs(t.a[2] - z) < 0.08 &&
+          Math.abs(t.b[2] - z) < 0.08 &&
+          Math.abs(t.c[2] - z) < 0.08,
+      )
+    const covers = (tris: typeof white, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    expect(covers(atZ(2), { x: 50, y: 28.5 })).toBe(true)
   })
 
   it('pockets the printed top plate and exports the shell parts', () => {

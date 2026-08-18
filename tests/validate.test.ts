@@ -27,6 +27,8 @@ describe('clampSettings', () => {
     expect(s.cassetteSlider).toBe(true)
     expect(s.cassetteFlipSlider).toBe(false)
     expect(s.cassetteAccess).toBe(true)
+    expect(s.cassetteBackRaised).toBe(true)
+    expect(s.cassetteBackWindow).toBe(true)
     expect(s.extraQrs).toEqual([])
     expect(s.blackTexts).toEqual([])
     expect(s.blackImages).toEqual([])
@@ -132,6 +134,8 @@ describe('clampSettings', () => {
       cassetteSlider: true,
       cassetteFlipSlider: false,
       cassetteAccess: true,
+      cassetteBackRaised: true,
+      cassetteBackWindow: true,
       extraQrs: [],
       blackTexts: [],
       blackImages: [],
