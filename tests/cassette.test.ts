@@ -21,18 +21,17 @@ describe('cassettePlate', () => {
     expect(pointInPolygon({ x: 0.5, y: plate.aspect / 2 }, plate.outer)).toBe(true)
   })
 
-  it('has two spindle holes and the slider window hole', () => {
+  it('has two spindle holes and no extra through-hole', () => {
     const plate = cassettePlate()
-    expect(plate.holes).toHaveLength(3)
+    expect(plate.holes).toHaveLength(2)
     const w = 100.11
     const left = { x: 28.5 / w, y: (63.6 - 35) / w }
     const right = { x: 71.65 / w, y: (63.6 - 35) / w }
-    const window = { x: 50.055 / w, y: (63.6 - 14.78) / w }
     const inHole = (p: { x: number; y: number }) =>
       plate.holes.some((h) => pointInPolygon(p, h))
     expect(inHole(left)).toBe(true)
     expect(inHole(right)).toBe(true)
-    expect(inHole(window)).toBe(true)
+    expect(inHole({ x: 0.5, y: (63.6 - 14.78) / w })).toBe(false)
     expect(pointInPolygon({ x: 0.5, y: plate.aspect / 2 }, plate.outer)).toBe(true)
     expect(inHole({ x: 0.5, y: plate.aspect / 2 })).toBe(false)
   })

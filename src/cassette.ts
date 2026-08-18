@@ -31,7 +31,6 @@ export const CASSETTE_CORNER_PLUG_D_MM = 1.6
 export const CASSETTE_HOLES_MM = [
   { cx: 28.5, cy: CASSETTE_HEIGHT_MM - 35.0, d: 9.8 },
   { cx: 71.65, cy: CASSETTE_HEIGHT_MM - 35.0, d: 9.8 },
-  { cx: 50.055, cy: CASSETTE_HEIGHT_MM - 14.78, d: 7.08 },
 ] as const
 
 const HOLES = CASSETTE_HOLES_MM.map((h) => ({
