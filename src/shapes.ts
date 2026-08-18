@@ -1,3 +1,4 @@
+import { cardCornerMm } from './card'
 import { ROUNDED_TAG_RADIUS, type PlateShape, type QrStyle } from './types'
 
 export type Point2 = { x: number; y: number }
@@ -131,6 +132,7 @@ export function plateOutlineAt(shape: PlateShape, widthMm: number, heightMm: num
   if (shape === 'rounded') return roundedPoly(0, 0, widthMm, ROUNDED_TAG_RADIUS)
   if (shape === 'hexagon') return hexagonFlatTop(heightMm)
   if (shape === 'rect' || shape === 'cassette') return rectPoly(0, 0, widthMm, heightMm)
+  if (shape === 'card') return roundedRectPoly(0, 0, widthMm, heightMm, cardCornerMm(widthMm))
   if (shape === 'dogtag') return stadiumPoly(0, 0, widthMm, heightMm)
   return squarePoly(0, 0, widthMm)
 }
@@ -164,6 +166,19 @@ export function plateFrameAt(
     return {
       outer,
       hole: stadiumPoly(frameMm, frameMm, widthMm - 2 * frameMm, heightMm - 2 * frameMm),
+    }
+  }
+  if (shape === 'card') {
+    const r = Math.max(0, cardCornerMm(widthMm) - frameMm)
+    return {
+      outer,
+      hole: roundedRectPoly(
+        frameMm,
+        frameMm,
+        widthMm - 2 * frameMm,
+        heightMm - 2 * frameMm,
+        r,
+      ),
     }
   }
   return {

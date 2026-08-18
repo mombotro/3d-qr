@@ -41,7 +41,23 @@ body {
 h1 {
   font-size: 1.25rem;
   font-weight: 500;
+  margin: 0 0 0.45rem;
+}
+
+.beta {
+  display: inline-block;
+  margin-left: 0.45rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8a1f1f;
+  vertical-align: 0.12em;
+}
+
+.beta-note {
   margin: 0 0 3rem;
+  font-size: 0.9rem;
+  color: #555;
 }
 
 section {
@@ -197,4 +213,8 @@ ol li {
 
 .fold[open] summary::before {
   content: 'v';
+}
+
+.cassette-opts[hidden] {
+  display: none;
 }

@@ -90,8 +90,17 @@ describe('makeLayout', () => {
     expect(custom.moduleMm).toBeCloseTo(customFull.moduleMm * 0.6)
   })
 
+  it('sizes a credit card like a rectangle of the same aspect', () => {
+    const height = 85.6 * (53.98 / 85.6)
+    const card = makeLayout(85.6, 25, 'card', height)
+    const rect = makeLayout(85.6, 25, 'rect', height)
+    expect(card.widthMm).toBeCloseTo(85.6)
+    expect(card.heightMm).toBeCloseTo(53.98)
+    expect(card.moduleMm).toBeCloseTo(rect.moduleMm)
+  })
+
   it('sizes a cassette like a custom plate of the same aspect', () => {
-    const height = 80 * (180 / 288)
+    const height = 80 * (63.6 / 100.11)
     const cassette = makeLayout(80, 25, 'cassette', height)
     const custom = makeLayout(80, 25, 'custom', height)
     expect(cassette.widthMm).toBe(80)
@@ -120,9 +129,9 @@ describe('makeLayout', () => {
   })
 
   it('lets a cassette QR reach a left spindle', () => {
-    const height = 80 * (180 / 288)
-    const holeX = (83.33 / 288) * 80 - 40
-    const holeY = (77.48 / 288) * 80 - height / 2
+    const height = 80 * (63.6 / 100.11)
+    const holeX = (28.5 / 100.11) * 80 - 40
+    const holeY = ((63.6 - 35) / 100.11) * 80 - height / 2
     const shifted = makeLayout(80, 25, 'cassette', height, holeX, holeY)
     expect(shifted.qrOffsetXMm).toBeCloseTo(holeX)
     expect(shifted.qrOffsetYMm).toBeCloseTo(holeY)

@@ -9,7 +9,8 @@ describe('clampSettings', () => {
     expect(s.qrOffsetXMm).toBe(0)
     expect(s.qrOffsetYMm).toBe(0)
     expect(s.qrSizePercent).toBe(100)
-    expect(s.blackHeightMm).toBe(LIMITS.blackHeightMm.default)
+    expect(s.blackHeightMm).toBe(LIMITS.blackHeightMm.min)
+    expect(LIMITS.blackHeightMm.default).toBe(LIMITS.blackHeightMm.min)
     expect(s.capThicknessMm).toBe(LIMITS.capThicknessMm.default)
     expect(s.logoSizePercent).toBe(LIMITS.logoSizePercent.default)
     expect(s.style).toBe('square')
@@ -20,18 +21,42 @@ describe('clampSettings', () => {
     expect(s.holeDiameterMm).toBe(LIMITS.holeDiameterMm.default)
     expect(s.insetFrame).toBe(false)
     expect(s.blankLogo).toBe(false)
+    expect(s.hollow).toBe(false)
+    expect(s.lid).toBe(false)
+    expect(s.cassetteLid).toBe(true)
+    expect(s.cassetteSlider).toBe(true)
+    expect(s.cassetteFlipSlider).toBe(false)
+    expect(s.cassetteAccess).toBe(true)
     expect(s.plateShape).not.toBe('cassette')
+    expect(s.blackHeightMm).toBe(LIMITS.blackHeightMm.min)
   })
 
-  it('accepts cassette and uses 100.8 by 63 mm with an 8 mm body', () => {
+  it('locks cassette to the printed 100.11 by 63.6 mm body', () => {
     const s = clampSettings({ plateShape: 'cassette' })
     expect(s.plateShape).toBe('cassette')
-    expect(s.widthMm).toBeCloseTo(100.8)
-    expect(s.heightMm).toBeCloseTo(63)
-    expect(s.capThicknessMm).toBe(8)
-    expect(clampSettings({ plateShape: 'cassette', capThicknessMm: 0.2 }).capThicknessMm).toBe(1)
-    expect(clampSettings({ plateShape: 'cassette', capThicknessMm: 20 }).capThicknessMm).toBe(8)
-    expect(clampSettings({ plateShape: 'cassette', widthMm: 80 }).widthMm).toBe(80)
+    expect(s.widthMm).toBeCloseTo(100.11)
+    expect(s.heightMm).toBeCloseTo(63.6)
+    expect(s.hollow).toBe(false)
+    expect(s.lid).toBe(false)
+    expect(s.dogtagHole).toBe(false)
+    expect(clampSettings({ plateShape: 'cassette', widthMm: 80 }).widthMm).toBeCloseTo(100.11)
+  })
+
+  it('accepts a credit card plate at 85.6 by 53.98 mm', () => {
+    const s = clampSettings({ plateShape: 'card' })
+    expect(s.plateShape).toBe('card')
+    expect(s.widthMm).toBeCloseTo(85.6)
+    expect(s.heightMm).toBeCloseTo(53.98)
+    expect(clampSettings({ plateShape: 'card', widthMm: 80 }).widthMm).toBe(80)
+    expect(clampSettings({ plateShape: 'card', widthMm: 80 }).heightMm).toBeCloseTo(
+      80 * (53.98 / 85.6),
+    )
+  })
+
+  it('turns the lid off when the tag is not hollow', () => {
+    expect(clampSettings({ lid: true }).lid).toBe(false)
+    expect(clampSettings({ hollow: true, lid: true }).lid).toBe(true)
+    expect(clampSettings({ hollow: true, lid: false }).lid).toBe(false)
   })
 
   it('snaps width below min to 30', () => {
@@ -77,6 +102,8 @@ describe('clampSettings', () => {
       holeDiameterMm: 5,
       insetFrame: true,
       blankLogo: true,
+      hollow: true,
+      lid: true,
     })
     expect(s).toEqual({
       content: 'https://example.com',
@@ -96,6 +123,12 @@ describe('clampSettings', () => {
       customAspect: 1,
       insetFrame: true,
       blankLogo: true,
+      hollow: true,
+      lid: true,
+      cassetteLid: true,
+      cassetteSlider: true,
+      cassetteFlipSlider: false,
+      cassetteAccess: true,
     })
   })
 })

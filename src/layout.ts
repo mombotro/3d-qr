@@ -71,7 +71,13 @@ export function plateBounds(
   if (shape === 'hexagon') {
     return { widthMm: (sizeMm * 2) / Math.sqrt(3), heightMm: sizeMm }
   }
-  if (shape === 'rect' || shape === 'dogtag' || shape === 'custom' || shape === 'cassette') {
+  if (
+    shape === 'rect' ||
+    shape === 'dogtag' ||
+    shape === 'custom' ||
+    shape === 'cassette' ||
+    shape === 'card'
+  ) {
     return { widthMm: sizeMm, heightMm }
   }
   return { widthMm: sizeMm, heightMm: sizeMm }
@@ -98,7 +104,11 @@ function moduleMmFor(
     if (2 * m < ROUNDED_TAG_RADIUS * sizeMm) return m
   }
   const short =
-    shape === 'rect' || shape === 'dogtag' || shape === 'custom' || shape === 'cassette'
+    shape === 'rect' ||
+    shape === 'dogtag' ||
+    shape === 'custom' ||
+    shape === 'cassette' ||
+    shape === 'card'
       ? Math.min(sizeMm, heightMm)
       : sizeMm
   return short / (content + frameBoth)

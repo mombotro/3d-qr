@@ -1,15 +1,18 @@
-import { buildBodies } from './bodies'
+import { buildBodies, type ExtraStl } from './bodies'
 import type { CustomPlate } from './contour'
 import { maskToCustomPlate } from './contour'
 import { makeLayout } from './layout'
 import { canEncode, encodeQr } from './encode'
 import { clampLogoPercent, thresholdMask } from './logo'
 import { rewriteSvgPixelSize, svgRasterSize } from './svgSize'
-import { PRINT_HELP_ORIGIN, PRINT_HELP_STEPS } from './printHelp'
+import { PRINT_HELP_CASSETTE, PRINT_HELP_ORIGIN, PRINT_HELP_STEPS } from './printHelp'
+import type { CassetteKit } from './cassetteParts'
+import { loadCassetteKit } from './cassetteParts'
 import { createPreview } from './preview'
 import type { Triangle } from './extrude'
 import { writeBinaryStl } from './stl'
 import type { PlateShape, QrSettings, QrStyle } from './types'
+import { CARD_ASPECT, CARD_DEFAULT_WIDTH_MM } from './card'
 import { CASSETTE_ASPECT, CASSETTE_DEFAULT_WIDTH_MM } from './cassette'
 import { LIMITS } from './types'
 import {
@@ -18,6 +21,7 @@ import {
   usesAspectHeight,
   usesCassetteBody,
   usesCustomSize,
+  usesFixedSize,
   usesDogtagHole,
   usesInsetFrame,
   usesQrOffsetX,
@@ -108,7 +112,8 @@ export function mountApp(root: HTMLElement): void {
       <img src="${chickenSrc}" alt="" width="16" height="16" />
       mombotro
     </a>
-    <h1>3D QR</h1>
+    <h1>3D QR <span class="beta">beta</span></h1>
+    <p class="beta-note">Beta. Features and print settings are still changing. Test a small tag before a long print.</p>
 
     <section>
       <label for="content">Content</label>
@@ -126,6 +131,7 @@ export function mountApp(root: HTMLElement): void {
         <label><input type="radio" name="plate" value="rect" /> rectangle</label>
         <label><input type="radio" name="plate" value="dogtag" /> dog tag</label>
         <label><input type="radio" name="plate" value="cassette" /> cassette</label>
+        <label><input type="radio" name="plate" value="card" /> credit card</label>
         <label><input type="radio" name="plate" value="custom" /> custom svg</label>
       </div>
       <div style="margin-top:1rem">
@@ -188,12 +194,30 @@ export function mountApp(root: HTMLElement): void {
       <div class="toggles">
         <label><input id="hole" type="checkbox" /> hole</label>
         <label><input id="insetFrame" type="checkbox" /> inset frame</label>
+        <label><input id="hollow" type="checkbox" /> hollow</label>
+        <label><input id="lid" type="checkbox" /> lid</label>
       </div>
       <div class="row" style="margin-top:1rem">
         <div>
           <label for="holeSize">Hole size mm</label>
           <input id="holeSize" type="number" step="0.5" />
         </div>
+      </div>
+      <div id="cassetteOpts" class="cassette-opts" hidden>
+        <div class="section-label" style="margin-top:1.25rem">Cassette</div>
+        <div class="choices">
+          <label><input type="radio" name="cassTop" value="lid" checked /> lid plate</label>
+          <label><input type="radio" name="cassTop" value="flat" /> flat plate</label>
+        </div>
+        <div class="toggles">
+          <label><input id="cassSlider" type="checkbox" checked /> slider slots</label>
+          <label><input id="cassFlip" type="checkbox" /> flip slider side</label>
+          <label><input id="cassAccess" type="checkbox" checked /> window piece</label>
+        </div>
+        <p class="hint">
+          QR prints on the top face, face down. The slider covers the extra hole so a scan
+          can still read.
+        </p>
       </div>
     </section>
 
@@ -216,6 +240,7 @@ export function mountApp(root: HTMLElement): void {
       <div class="toggles">
         <label><input id="showBlack" type="checkbox" checked /> show black</label>
         <label><input id="showWhite" type="checkbox" checked /> show white</label>
+        <label><input id="showLid" type="checkbox" checked /> show lid</label>
       </div>
     </section>
 
@@ -224,13 +249,17 @@ export function mountApp(root: HTMLElement): void {
       <div class="export-row">
         <button type="button" id="dlBlack" disabled>qr-black.stl</button>
         <button type="button" id="dlWhite" disabled>qr-white.stl</button>
+        <button type="button" id="dlLid" disabled>qr-lid.stl</button>
+        <button type="button" id="dlBottom" disabled>cassette-bottom.stl</button>
+        <button type="button" id="dlSlider" disabled>cassette-slider.stl</button>
+        <button type="button" id="dlWindow" disabled>cassette-window.stl</button>
       </div>
     </section>
 
     <section>
       <details class="fold">
         <summary>How to print</summary>
-        <ol>
+        <ol id="printSteps">
           ${PRINT_HELP_STEPS.map((s) => `<li>${s}</li>`).join('')}
         </ol>
         <p class="hint">${PRINT_HELP_ORIGIN}</p>
@@ -247,6 +276,13 @@ export function mountApp(root: HTMLElement): void {
   const hole = root.querySelector<HTMLInputElement>('#hole')!
   const holeSize = root.querySelector<HTMLInputElement>('#holeSize')!
   const insetFrame = root.querySelector<HTMLInputElement>('#insetFrame')!
+  const hollow = root.querySelector<HTMLInputElement>('#hollow')!
+  const lidOn = root.querySelector<HTMLInputElement>('#lid')!
+  const cassetteOpts = root.querySelector<HTMLElement>('#cassetteOpts')!
+  const cassSlider = root.querySelector<HTMLInputElement>('#cassSlider')!
+  const cassFlip = root.querySelector<HTMLInputElement>('#cassFlip')!
+  const cassAccess = root.querySelector<HTMLInputElement>('#cassAccess')!
+  const printSteps = root.querySelector<HTMLOListElement>('#printSteps')!
   const black = root.querySelector<HTMLInputElement>('#black')!
   const cap = root.querySelector<HTMLInputElement>('#cap')!
   const capLabel = root.querySelector<HTMLElement>('#capLabel')!
@@ -259,14 +295,27 @@ export function mountApp(root: HTMLElement): void {
   const note = root.querySelector<HTMLElement>('#note')!
   const dlBlack = root.querySelector<HTMLButtonElement>('#dlBlack')!
   const dlWhite = root.querySelector<HTMLButtonElement>('#dlWhite')!
+  const dlLid = root.querySelector<HTMLButtonElement>('#dlLid')!
+  const dlBottom = root.querySelector<HTMLButtonElement>('#dlBottom')!
+  const dlSlider = root.querySelector<HTMLButtonElement>('#dlSlider')!
+  const dlWindow = root.querySelector<HTMLButtonElement>('#dlWindow')!
   const showBlack = root.querySelector<HTMLInputElement>('#showBlack')!
   const showWhite = root.querySelector<HTMLInputElement>('#showWhite')!
+  const showLid = root.querySelector<HTMLInputElement>('#showLid')!
   const previewEl = root.querySelector<HTMLElement>('#preview')!
 
   const preview = createPreview(previewEl)
   let logoMask: boolean[][] | undefined
   let customPlate: CustomPlate | null = null
-  let last: { settings: QrSettings; black: Triangle[]; white: Triangle[] } | null = null
+  let last: {
+    settings: QrSettings
+    black: Triangle[]
+    white: Triangle[]
+    lid: Triangle[]
+    extras: ExtraStl[]
+  } | null = null
+  let cassetteKit: CassetteKit | null = null
+  let cassetteLoad = 0
 
   function readForm(): Partial<QrSettings> {
     const styleInput = root.querySelector<HTMLInputElement>('input[name="style"]:checked')
@@ -290,12 +339,22 @@ export function mountApp(root: HTMLElement): void {
       holeDiameterMm: Number(holeSize.value),
       insetFrame: insetFrame.checked,
       blankLogo: blankLogo.checked,
+      hollow: hollow.checked,
+      lid: lidOn.checked,
+      cassetteLid:
+        (root.querySelector<HTMLInputElement>('input[name="cassTop"]:checked')?.value ?? 'lid') ===
+        'lid',
+      cassetteSlider: cassSlider.checked,
+      cassetteFlipSlider: cassFlip.checked,
+      cassetteAccess: cassAccess.checked,
     }
   }
 
   function writeClampedForm(settings: QrSettings) {
     width.value = String(settings.widthMm)
     height.value = String(settings.heightMm)
+    const fixed = usesFixedSize(settings.plateShape)
+    width.disabled = fixed
     height.disabled = !usesCustomSize(settings.plateShape)
     if (usesAspectHeight(settings.plateShape)) {
       height.value = String(Math.round(settings.widthMm * settings.customAspect * 10) / 10)
@@ -311,10 +370,30 @@ export function mountApp(root: HTMLElement): void {
     holeSize.disabled = !settings.dogtagHole
     insetFrame.disabled = !usesInsetFrame(settings.plateShape)
     insetFrame.checked = settings.insetFrame
+    const cassette = usesCassetteBody(settings.plateShape)
+    hollow.checked = settings.hollow
+    hollow.disabled = cassette
+    lidOn.checked = settings.lid
+    lidOn.disabled = cassette || !settings.hollow
+    cassetteOpts.hidden = !cassette
+    cassSlider.checked = settings.cassetteSlider
+    cassFlip.checked = settings.cassetteFlipSlider
+    cassFlip.disabled = !settings.cassetteSlider
+    cassAccess.checked = settings.cassetteAccess
+    const topVal = settings.cassetteLid ? 'lid' : 'flat'
+    for (const radio of root.querySelectorAll<HTMLInputElement>('input[name="cassTop"]')) {
+      radio.checked = radio.value === topVal
+    }
+    const help = cassette ? PRINT_HELP_CASSETTE : PRINT_HELP_STEPS
+    printSteps.innerHTML = help.map((s) => `<li>${s}</li>`).join('')
     shapeFile.disabled = !usesShapeUpload(settings.plateShape)
     black.value = String(settings.blackHeightMm)
-    const cassette = usesCassetteBody(settings.plateShape)
-    capLabel.textContent = cassette ? 'Cassette mm' : 'Cap thickness mm'
+    capLabel.textContent = cassette
+      ? 'Cassette mm'
+      : settings.hollow
+        ? 'Wall height mm'
+        : 'Cap thickness mm'
+    cap.disabled = cassette
     cap.step = cassette ? '0.5' : '0.1'
     cap.min = cassette ? '1' : '0.4'
     cap.max = cassette ? '8' : '3'
@@ -323,14 +402,45 @@ export function mountApp(root: HTMLElement): void {
     logoSize.value = String(settings.logoSizePercent)
   }
 
-  function setExportEnabled(on: boolean) {
+  function setExportEnabled(on: boolean, extras: ExtraStl[] = [], hasLid = false) {
     dlBlack.disabled = !on
     dlWhite.disabled = !on
+    dlLid.disabled = !on || !hasLid
+    const names = new Set(extras.map((e) => e.filename))
+    dlBottom.disabled = !on || !names.has('cassette-bottom.stl')
+    dlSlider.disabled = !on || !names.has('cassette-slider.stl')
+    dlWindow.disabled = !on || !names.has('cassette-window.stl')
   }
 
-  function rebuild() {
+  async function loadKit(settings: QrSettings): Promise<CassetteKit | null> {
+    if (settings.plateShape !== 'cassette') {
+      cassetteKit = null
+      return null
+    }
+    const id = ++cassetteLoad
+    try {
+      const kit = await loadCassetteKit({
+        lid: settings.cassetteLid,
+        slider: settings.cassetteSlider,
+        flipSlider: settings.cassetteFlipSlider,
+        access: settings.cassetteAccess,
+      })
+      if (id !== cassetteLoad) return cassetteKit
+      cassetteKit = kit
+      return kit
+    } catch {
+      if (id === cassetteLoad) {
+        cassetteKit = null
+        note.textContent = 'Cassette parts could not be loaded.'
+      }
+      return null
+    }
+  }
+
+  async function rebuild() {
     const settings = clampSettings(readForm())
     if (settings.plateShape === 'cassette') settings.customAspect = CASSETTE_ASPECT
+    else if (settings.plateShape === 'card') settings.customAspect = CARD_ASPECT
     else if (customPlate) settings.customAspect = customPlate.aspect
     if (usesAspectHeight(settings.plateShape)) {
       settings.heightMm = customPlateHeightMm(settings.widthMm, settings.customAspect)
@@ -355,6 +465,7 @@ export function mountApp(root: HTMLElement): void {
       return
     }
     note.textContent = ''
+    const kit = await loadKit(settings)
     const matrix = encodeQr(settings.content, settings.hasLogo)
     settings.logoSizePercent = clampLogoPercent(settings.logoSizePercent, matrix.size)
     logoSize.max = String(clampLogoPercent(50, matrix.size))
@@ -373,16 +484,19 @@ export function mountApp(root: HTMLElement): void {
     settings.qrOffsetYMm = layout.qrOffsetYMm
     settings.qrSizePercent = Math.round(layout.qrSizePercent)
     writeClampedForm(settings)
-    const bodies = buildBodies(settings, matrix, logoMask, customPlate)
-    preview.setMeshes(bodies.black, bodies.white)
+    const bodies = buildBodies(settings, matrix, logoMask, customPlate, kit)
+    preview.setMeshes(bodies.black, bodies.white, bodies.lid)
     preview.setVisible('black', showBlack.checked)
     preview.setVisible('white', showWhite.checked)
+    preview.setVisible('lid', showLid.checked)
     last = {
       settings,
       black: bodies.black,
       white: bodies.white,
+      lid: bodies.lid,
+      extras: bodies.extras,
     }
-    setExportEnabled(true)
+    setExportEnabled(true, bodies.extras, bodies.lid.length > 0)
   }
 
   const defaults = clampSettings({})
@@ -398,6 +512,14 @@ export function mountApp(root: HTMLElement): void {
   hole.addEventListener('change', rebuild)
   holeSize.addEventListener('change', rebuild)
   insetFrame.addEventListener('change', rebuild)
+  hollow.addEventListener('change', () => void rebuild())
+  lidOn.addEventListener('change', () => void rebuild())
+  cassSlider.addEventListener('change', () => void rebuild())
+  cassFlip.addEventListener('change', () => void rebuild())
+  cassAccess.addEventListener('change', () => void rebuild())
+  for (const radio of root.querySelectorAll<HTMLInputElement>('input[name="cassTop"]')) {
+    radio.addEventListener('change', () => void rebuild())
+  }
   black.addEventListener('change', rebuild)
   cap.addEventListener('change', rebuild)
   logoSize.addEventListener('change', rebuild)
@@ -407,8 +529,11 @@ export function mountApp(root: HTMLElement): void {
   }
   for (const radio of root.querySelectorAll<HTMLInputElement>('input[name="plate"]')) {
     radio.addEventListener('change', () => {
-      if (radio.value === 'cassette' && Number(width.value) === LIMITS.widthMm.default) {
+      if (radio.value === 'cassette') {
         width.value = String(CASSETTE_DEFAULT_WIDTH_MM)
+      }
+      if (radio.value === 'card' && Number(width.value) === LIMITS.widthMm.default) {
+        width.value = String(CARD_DEFAULT_WIDTH_MM)
       }
       rebuild()
     })
@@ -434,6 +559,7 @@ export function mountApp(root: HTMLElement): void {
   })
   showBlack.addEventListener('change', () => preview.setVisible('black', showBlack.checked))
   showWhite.addEventListener('change', () => preview.setVisible('white', showWhite.checked))
+  showLid.addEventListener('change', () => preview.setVisible('lid', showLid.checked))
 
   logo.addEventListener('change', async () => {
     logoError.textContent = ''
@@ -459,5 +585,23 @@ export function mountApp(root: HTMLElement): void {
   })
   dlWhite.addEventListener('click', () => {
     if (last) downloadStl('qr-white.stl', writeBinaryStl(last.white))
+  })
+  dlLid.addEventListener('click', () => {
+    if (last && last.lid.length) downloadStl('qr-lid.stl', writeBinaryStl(last.lid))
+  })
+  function extra(name: string): Triangle[] | undefined {
+    return last?.extras.find((e) => e.filename === name)?.triangles
+  }
+  dlBottom.addEventListener('click', () => {
+    const tris = extra('cassette-bottom.stl')
+    if (tris) downloadStl('cassette-bottom.stl', writeBinaryStl(tris))
+  })
+  dlSlider.addEventListener('click', () => {
+    const tris = extra('cassette-slider.stl')
+    if (tris) downloadStl('cassette-slider.stl', writeBinaryStl(tris))
+  })
+  dlWindow.addEventListener('click', () => {
+    const tris = extra('cassette-window.stl')
+    if (tris) downloadStl('cassette-window.stl', writeBinaryStl(tris))
   })
 }

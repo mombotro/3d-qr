@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { Triangle } from './extrude'
 
 export function createPreview(container: HTMLElement): {
-  setMeshes(black: Triangle[], white: Triangle[]): void
-  setVisible(which: 'black' | 'white', visible: boolean): void
+  setMeshes(black: Triangle[], white: Triangle[], lid?: Triangle[]): void
+  setVisible(which: 'black' | 'white' | 'lid', visible: boolean): void
   dispose(): void
 } {
   const scene = new THREE.Scene()
@@ -26,6 +26,7 @@ export function createPreview(container: HTMLElement): {
 
   let blackMesh: THREE.Mesh | null = null
   let whiteMesh: THREE.Mesh | null = null
+  let lidMesh: THREE.Mesh | null = null
   let raf = 0
 
   function resize() {
@@ -51,9 +52,10 @@ export function createPreview(container: HTMLElement): {
     return g
   }
 
-  function setMeshes(black: Triangle[], white: Triangle[]) {
+  function setMeshes(black: Triangle[], white: Triangle[], lid: Triangle[] = []) {
     if (blackMesh) scene.remove(blackMesh)
     if (whiteMesh) scene.remove(whiteMesh)
+    if (lidMesh) scene.remove(lidMesh)
     blackMesh = new THREE.Mesh(
       geometryFrom(black),
       new THREE.MeshLambertMaterial({ color: 0x111111, side: THREE.DoubleSide }),
@@ -62,9 +64,24 @@ export function createPreview(container: HTMLElement): {
       geometryFrom(white),
       new THREE.MeshLambertMaterial({ color: 0xf4f4f4, side: THREE.DoubleSide }),
     )
+    lidMesh = new THREE.Mesh(
+      geometryFrom(lid),
+      new THREE.MeshLambertMaterial({ color: 0xd8d2c8, side: THREE.DoubleSide }),
+    )
+    if (lid.length) {
+      let maxZ = -Infinity
+      for (const t of white) {
+        for (const v of [t.a, t.b, t.c]) maxZ = Math.max(maxZ, v[2])
+      }
+      lidMesh.position.z = Number.isFinite(maxZ) ? maxZ : 0
+    }
     scene.add(blackMesh)
     scene.add(whiteMesh)
-    const box = new THREE.Box3().setFromObject(blackMesh).union(new THREE.Box3().setFromObject(whiteMesh))
+    scene.add(lidMesh)
+    const box = new THREE.Box3()
+      .setFromObject(blackMesh)
+      .union(new THREE.Box3().setFromObject(whiteMesh))
+      .union(new THREE.Box3().setFromObject(lidMesh))
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
     const qrZ = box.min.z
@@ -80,9 +97,10 @@ export function createPreview(container: HTMLElement): {
     controls.update()
   }
 
-  function setVisible(which: 'black' | 'white', visible: boolean) {
+  function setVisible(which: 'black' | 'white' | 'lid', visible: boolean) {
     if (which === 'black' && blackMesh) blackMesh.visible = visible
     if (which === 'white' && whiteMesh) whiteMesh.visible = visible
+    if (which === 'lid' && lidMesh) lidMesh.visible = visible
   }
 
   function tick() {

@@ -1,12 +1,21 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { encodeQr } from '../src/encode'
 import { makeLayout, moduleOrigin } from '../src/layout'
 import { customFrame, maskToCustomPlate } from '../src/contour'
 import { buildBodies } from '../src/bodies'
+import {
+  prepareAccess,
+  prepareBottomShell,
+  prepareSlider,
+  prepareTopPlate,
+} from '../src/cassetteParts'
 import { pointInPolygon } from '../src/offset'
 import { logoClearRect } from '../src/logo'
 import { clampSettings } from '../src/validate'
 import { dogtagHole } from '../src/shapes'
+import { readBinaryStl } from '../src/stl'
 import { GAP_MM } from '../src/types'
 
 function zRange(tris: { a: number[]; b: number[]; c: number[] }[]) {
@@ -394,7 +403,6 @@ describe('buildBodies', () => {
     const tag = clampSettings({
       ...settings,
       plateShape: 'cassette',
-      widthMm: 80,
       capThicknessMm: 4,
       insetFrame: false,
       dogtagHole: false,
@@ -403,8 +411,8 @@ describe('buildBodies', () => {
     expect(black.length).toBeGreaterThan(0)
     const wz = zRange(white)
     expect(wz.max).toBeCloseTo(1.2 + 4 + 1)
-    const height = 80 * (180 / 288)
-    const stripMid = { x: 40, y: height - height * 0.08 }
+    const height = 63.6
+    const stripMid = { x: 50.055, y: height - height * 0.08 }
     const stripLayer = white.filter(
       (t) => t.a[2] >= 1.2 + 4 - 1e-6 && t.b[2] >= 1.2 + 4 - 1e-6 && t.c[2] >= 1.2 + 4 - 1e-6,
     )
@@ -416,7 +424,7 @@ describe('buildBodies', () => {
       ]),
     )
     expect(inStrip).toBe(true)
-    const leftHole = { x: (83.33 / 288) * 80, y: (77.48 / 288) * 80 }
+    const leftHole = { x: 28.5, y: 63.6 - 35 }
     const cap = white.filter(
       (t) =>
         t.a[2] >= 1.2 - 1e-6 &&
@@ -461,5 +469,196 @@ describe('buildBodies', () => {
     }
     expect(anyTriContains(black, mid)).toBe(false)
     expect(anyTriContains(whiteFill, mid)).toBe(true)
+  })
+
+  it('connects fill to cap with walls so a solid cap cannot drop to the bed', () => {
+    const { white } = buildBodies(settings, matrix)
+    const low = white.some((t) => {
+      const zs = [t.a[2], t.b[2], t.c[2]]
+      return Math.min(...zs) < 0.1 && Math.max(...zs) > 1.1
+    })
+    const high = white.some((t) => {
+      const zs = [t.a[2], t.b[2], t.c[2]]
+      return Math.min(...zs) < 1.3 && Math.max(...zs) > 1.9
+    })
+    expect(low).toBe(true)
+    expect(high).toBe(true)
+  })
+
+  it('leaves a hole at z=0 under a black module so the white first layer is not solid', () => {
+    const { black, white } = buildBodies(settings, matrix)
+    const layout = makeLayout(80, matrix.size)
+    let mid: { x: number; y: number } | null = null
+    outer: for (let r = 8; r < matrix.size - 8; r++) {
+      for (let c = 8; c < matrix.size - 8; c++) {
+        if (matrix.modules[r][c]) {
+          const o = moduleOrigin(layout, r, c)
+          mid = { x: o.x + layout.moduleMm / 2, y: o.y + layout.moduleMm / 2 }
+          break outer
+        }
+      }
+    }
+    expect(mid).not.toBeNull()
+    const bottom = white.filter((t) => t.a[2] < 1e-6 && t.b[2] < 1e-6 && t.c[2] < 1e-6)
+    const inBlack = black.some((t) =>
+      pointInPolygon(mid!, [
+        { x: t.a[0], y: t.a[1] },
+        { x: t.b[0], y: t.b[1] },
+        { x: t.c[0], y: t.c[1] },
+      ]),
+    )
+    const inWhiteBottom = bottom.some((t) =>
+      pointInPolygon(mid!, [
+        { x: t.a[0], y: t.a[1] },
+        { x: t.b[0], y: t.b[1] },
+        { x: t.c[0], y: t.c[1] },
+      ]),
+    )
+    expect(inBlack).toBe(true)
+    expect(inWhiteBottom).toBe(false)
+  })
+
+  it('leaves the interior empty above the QR when hollow is on', () => {
+    const tag = clampSettings({ ...settings, hollow: true, lid: false })
+    const { white, lid } = buildBodies(tag, matrix)
+    expect(lid).toEqual([])
+    const ceiling = white.filter(
+      (t) => t.a[2] > 1.2 + 1e-6 && t.b[2] > 1.2 + 1e-6 && t.c[2] > 1.2 + 1e-6,
+    )
+    const center = { x: 40, y: 40 }
+    const hits = ceiling.some((t) =>
+      pointInPolygon(center, [
+        { x: t.a[0], y: t.a[1] },
+        { x: t.b[0], y: t.b[1] },
+        { x: t.c[0], y: t.c[1] },
+      ]),
+    )
+    expect(hits).toBe(false)
+    const wz = zRange(white)
+    expect(wz.max).toBeCloseTo(2.0)
+  })
+
+  it('builds a lid that covers the plate when lid is on', () => {
+    const tag = clampSettings({ ...settings, hollow: true, lid: true })
+    const { lid } = buildBodies(tag, matrix)
+    expect(lid.length).toBeGreaterThan(0)
+    const z = zRange(lid)
+    expect(z.min).toBeCloseTo(0)
+    expect(z.max).toBeGreaterThan(0.4)
+    const top = lid.filter(
+      (t) =>
+        Math.abs(t.a[2] - z.max) < 1e-6 &&
+        Math.abs(t.b[2] - z.max) < 1e-6 &&
+        Math.abs(t.c[2] - z.max) < 1e-6,
+    )
+    const center = { x: 40, y: 40 }
+    const hits = top.some((t) =>
+      pointInPolygon(center, [
+        { x: t.a[0], y: t.a[1] },
+        { x: t.b[0], y: t.b[1] },
+        { x: t.c[0], y: t.c[1] },
+      ]),
+    )
+    expect(hits).toBe(true)
+  })
+
+  it('builds a credit card body at ID-1 size', () => {
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'card',
+      blackHeightMm: 1.2,
+      capThicknessMm: 0.8,
+      insetFrame: true,
+      dogtagHole: false,
+    })
+    const { black, white } = buildBodies(tag, matrix)
+    expect(tag.widthMm).toBeCloseTo(85.6)
+    expect(tag.heightMm).toBeCloseTo(53.98)
+    const b = xyOf(black)
+    const w = xyOf(white)
+    expect(b.minX).toBeCloseTo(0, 0)
+    expect(b.minY).toBeCloseTo(0, 0)
+    expect(w.minX).toBeCloseTo(0, 0)
+    expect(w.minY).toBeCloseTo(0, 0)
+    expect(zRange(white).max).toBeCloseTo(2.0)
+  })
+
+  it('pockets the printed top plate and exports the shell parts', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)).triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: true,
+      cassetteSlider: true,
+      cassetteFlipSlider: false,
+      cassetteAccess: true,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr.stl')),
+      bottom: prepareBottomShell(load('bottom-shell.stl'), false),
+      slider: prepareSlider(load('slider.stl'), false),
+      access: prepareAccess(load('shell-acces-1.stl')),
+    }
+    const { black, white, extras } = buildBodies(tag, matrix, undefined, null, kit)
+    expect(black.length).toBeGreaterThan(0)
+    expect(zRange(white).min).toBeCloseTo(0, 2)
+    expect(zRange(white).max).toBeGreaterThan(2)
+    const b = xyOf(black)
+    const w = xyOf(white)
+    expect(b.minX).toBeCloseTo(0, 1)
+    expect(b.minY).toBeCloseTo(0, 1)
+    expect(w.minX).toBeCloseTo(0, 1)
+    expect(w.minY).toBeCloseTo(0, 1)
+    let bMaxX = -Infinity
+    let bMaxY = -Infinity
+    let wMaxX = -Infinity
+    let wMaxY = -Infinity
+    for (const t of black) {
+      for (const v of [t.a, t.b, t.c]) {
+        bMaxX = Math.max(bMaxX, v[0])
+        bMaxY = Math.max(bMaxY, v[1])
+      }
+    }
+    for (const t of white) {
+      for (const v of [t.a, t.b, t.c]) {
+        wMaxX = Math.max(wMaxX, v[0])
+        wMaxY = Math.max(wMaxY, v[1])
+      }
+    }
+    expect(bMaxX).toBeCloseTo(wMaxX, 0)
+    expect(bMaxY).toBeCloseTo(wMaxY, 0)
+    expect(extras.map((e) => e.filename)).toEqual([
+      'cassette-bottom.stl',
+      'cassette-slider.stl',
+      'cassette-window.stl',
+    ])
+  })
+
+  it('plugs the four corner pin holes on the flat plate only', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const lid = prepareTopPlate(load('top-plate-qr.stl'), false)
+    const flat = prepareTopPlate(load('top-plate-qr-flat.stl'), true)
+    expect(flat.length).toBeGreaterThan(lid.length)
+    const corner = { x: 2, y: 63.6 - 1.8 }
+    const lidBed = lid.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const flatBed = flat.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (tris: typeof flat, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    expect(covers(flatBed, corner)).toBe(true)
   })
 })

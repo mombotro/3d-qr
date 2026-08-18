@@ -8,10 +8,10 @@ import {
 import { pointInPolygon } from '../src/offset'
 
 describe('cassettePlate', () => {
-  it('uses the cassette.svg viewBox aspect', () => {
-    expect(CASSETTE_ASPECT).toBeCloseTo(180 / 288)
+  it('uses the printed 100.11 by 63.6 mm plate', () => {
+    expect(CASSETTE_ASPECT).toBeCloseTo(63.6 / 100.11)
     const plate = cassettePlate()
-    expect(plate.aspect).toBeCloseTo(180 / 288)
+    expect(plate.aspect).toBeCloseTo(63.6 / 100.11)
   })
 
   it('rounds the outer corners a little', () => {
@@ -21,15 +21,20 @@ describe('cassettePlate', () => {
     expect(pointInPolygon({ x: 0.5, y: plate.aspect / 2 }, plate.outer)).toBe(true)
   })
 
-  it('has two spindle holes from cassette.svg', () => {
+  it('has two spindle holes and the slider window hole', () => {
     const plate = cassettePlate()
-    expect(plate.holes).toHaveLength(2)
-    const left = { x: 83.33 / 288, y: 77.48 / 288 }
-    const right = { x: 203.67 / 288, y: 77.48 / 288 }
-    expect(pointInPolygon(left, plate.holes[0]) || pointInPolygon(left, plate.holes[1])).toBe(true)
-    expect(pointInPolygon(right, plate.holes[0]) || pointInPolygon(right, plate.holes[1])).toBe(true)
+    expect(plate.holes).toHaveLength(3)
+    const w = 100.11
+    const left = { x: 28.5 / w, y: (63.6 - 35) / w }
+    const right = { x: 71.65 / w, y: (63.6 - 35) / w }
+    const window = { x: 50.055 / w, y: (63.6 - 14.78) / w }
+    const inHole = (p: { x: number; y: number }) =>
+      plate.holes.some((h) => pointInPolygon(p, h))
+    expect(inHole(left)).toBe(true)
+    expect(inHole(right)).toBe(true)
+    expect(inHole(window)).toBe(true)
     expect(pointInPolygon({ x: 0.5, y: plate.aspect / 2 }, plate.outer)).toBe(true)
-    expect(pointInPolygon({ x: 0.5, y: plate.aspect / 2 }, plate.holes[0])).toBe(false)
+    expect(inHole({ x: 0.5, y: plate.aspect / 2 })).toBe(false)
   })
 })
 
