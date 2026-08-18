@@ -661,4 +661,51 @@ describe('buildBodies', () => {
       )
     expect(covers(flatBed, corner)).toBe(true)
   })
+
+  it('keeps the cassette inset as a border and does not fill the head window with black', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: true,
+      cassetteLid: true,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr.stl')),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { black, white } = buildBodies(tag, matrix, undefined, null, kit)
+    const atBed = (tris: typeof black) =>
+      tris.filter((t) => t.a[2] < 0.05 && t.b[2] < 0.05 && t.c[2] < 0.05)
+    const covers = (tris: typeof black, p: { x: number; y: number }) =>
+      tris.some((t) =>
+        pointInPolygon(p, [
+          { x: t.a[0], y: t.a[1] },
+          { x: t.b[0], y: t.b[1] },
+          { x: t.c[0], y: t.c[1] },
+        ]),
+      )
+    const blackBed = atBed(black)
+    const whiteBed = atBed(white)
+    let minY = Infinity
+    let maxY = -Infinity
+    for (const t of black) {
+      for (const v of [t.a, t.b, t.c]) {
+        minY = Math.min(minY, v[1])
+        maxY = Math.max(maxY, v[1])
+      }
+    }
+    const edge = { x: 50, y: maxY - 0.4 }
+    const window = { x: 50, y: 56 }
+    expect(covers(blackBed, edge)).toBe(true)
+    expect(covers(whiteBed, edge)).toBe(false)
+    expect(covers(blackBed, window)).toBe(false)
+  })
 })

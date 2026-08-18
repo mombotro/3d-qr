@@ -198,6 +198,7 @@ export function buildBodies(
       cassetteHeadStrip(layout.widthMm, layout.heightMm),
       settings.blackHeightMm,
       settings.cassetteLid,
+      subtractFrame,
     )
     const box = meshBBox(white)
     const whiteOnOrigin = translateMesh(white, -box.minX, -box.minY, -box.minZ)
@@ -259,14 +260,17 @@ function cassetteSolidPlate(
   windowPocket: Polygon,
   zQr: number,
   withLip: boolean,
+  frame: { outer: Polygon; hole: Polygon } | null,
 ): Triangle[] {
   const z0 = 0
   const zTop = CASSETTE_PLATE_T_MM
   const zWin = Math.max(zQr, CASSETTE_WINDOW_DEPTH_MM)
+  const window = clipWindowToFrame(windowPocket, frame)
   const clips: ClipPolygon[] = [
     ...throughHoles.map((h) => [toRing(h)]),
     ...qrPockets.map((p) => [toRing(p)]),
-    [toRing(windowPocket)],
+    [toRing(window)],
+    ...(frame ? [[toRing(frame.outer), toRing(frame.hole)]] : []),
   ]
   const fill = difference([toRing(outline)], ...unionMany(clips))
   const tris: Triangle[] = []
@@ -277,9 +281,13 @@ function cassetteSolidPlate(
       tris.push(...ringWalls(hole, z0, zQr, false))
     }
   }
-  if (qrPockets.length) {
+  const qrCeilClips = [
+    ...qrPockets.map((p) => [toRing(p)] as ClipPolygon),
+    ...(frame ? [[toRing(frame.outer), toRing(frame.hole)] as ClipPolygon] : []),
+  ]
+  if (qrCeilClips.length) {
     const qrCeil = difference(
-      unionMany(qrPockets.map((p) => [toRing(p)])),
+      unionMany(qrCeilClips),
       ...throughHoles.map((h) => [toRing(h)]),
     )
     for (const piece of clipPieces(qrCeil)) {
@@ -287,8 +295,8 @@ function cassetteSolidPlate(
     }
   }
   if (zWin > zQr + 1e-6) {
-    tris.push(...ringWalls(windowPocket, zQr, zWin, false))
-    const winCeil = difference([toRing(windowPocket)], ...throughHoles.map((h) => [toRing(h)]))
+    tris.push(...ringWalls(window, zQr, zWin, false))
+    const winCeil = difference([toRing(window)], ...throughHoles.map((h) => [toRing(h)]))
     for (const piece of clipPieces(winCeil)) {
       tris.push(...capFaces(piece.outer, piece.holes, zWin, false))
     }
@@ -306,6 +314,17 @@ function cassetteSolidPlate(
     tris.push(...ringWalls(hole, zQr, zTop, false))
   }
   return tris
+}
+
+function clipWindowToFrame(
+  windowPocket: Polygon,
+  frame: { outer: Polygon; hole: Polygon } | null,
+): Polygon {
+  if (!frame) return windowPocket
+  const cut = intersection([toRing(windowPocket)], [toRing(frame.hole)])
+  const first = cut[0]?.[0]
+  if (!first || first.length < 3) return windowPocket
+  return fromRing(first)
 }
 
 function whiteSolid(
