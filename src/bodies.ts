@@ -265,12 +265,12 @@ function cassetteSolidPlate(
   const z0 = 0
   const zTop = CASSETTE_PLATE_T_MM
   const zWin = Math.max(zQr, CASSETTE_WINDOW_DEPTH_MM)
-  const window = clipWindowToFrame(windowPocket, frame)
   const inner = frame ? frame.hole : outline
+  const window = clipWindowToInner(windowPocket, inner)
   const clips: ClipPolygon[] = [
     ...throughHoles.map((h) => [toRing(h)]),
     ...qrPockets.map((p) => [toRing(p)]),
-    [toRing(window)],
+    ...(window ? [[toRing(window)]] : []),
   ]
   const fill = difference([toRing(inner)], ...unionMany(clips))
   const tris: Triangle[] = []
@@ -293,12 +293,9 @@ function cassetteSolidPlate(
   if (frame) {
     tris.push(...capFaces(frame.outer, [frame.hole, ...throughHoles], zQr, false))
   }
-  if (zWin > zQr + 1e-6) {
+  if (window && zWin > zQr + 1e-6) {
     tris.push(...ringWalls(window, zQr, zWin, false))
-    const winCeil = difference([toRing(window)], ...throughHoles.map((h) => [toRing(h)]))
-    for (const piece of clipPieces(winCeil)) {
-      tris.push(...capFaces(piece.outer, piece.holes, zWin, false))
-    }
+    tris.push(...capFaces(window, [], zWin, false))
   }
   const lip = withLip ? cassetteLipPoly() : null
   if (lip) {
@@ -315,14 +312,10 @@ function cassetteSolidPlate(
   return tris
 }
 
-function clipWindowToFrame(
-  windowPocket: Polygon,
-  frame: { outer: Polygon; hole: Polygon } | null,
-): Polygon {
-  if (!frame) return windowPocket
-  const cut = intersection([toRing(windowPocket)], [toRing(frame.hole)])
+function clipWindowToInner(windowPocket: Polygon, inner: Polygon): Polygon | null {
+  const cut = intersection([toRing(windowPocket)], [toRing(inner)])
   const first = cut[0]?.[0]
-  if (!first || first.length < 3) return windowPocket
+  if (!first || first.length < 3) return null
   return fromRing(first)
 }
 

@@ -707,5 +707,12 @@ describe('buildBodies', () => {
     expect(covers(blackBed, edge)).toBe(true)
     expect(covers(whiteBed, edge)).toBe(false)
     expect(covers(blackBed, window)).toBe(false)
+    const winFloor = white.filter(
+      (t) =>
+        Math.abs(t.a[2] - 1) < 0.05 &&
+        Math.abs(t.b[2] - 1) < 0.05 &&
+        Math.abs(t.c[2] - 1) < 0.05,
+    )
+    expect(covers(winFloor, window)).toBe(true)
   })
 })
