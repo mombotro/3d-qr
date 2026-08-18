@@ -9,7 +9,7 @@ import {
 import type { CustomPlate } from './contour'
 import { customFrame, scaleCustomPlate } from './contour'
 import type { QrMatrix } from './encode'
-import { capFaces, extrudeRing, ringWalls, ringWallsWhere, type Triangle } from './extrude'
+import { capFaces, extrudeRing, ringWalls, type Triangle } from './extrude'
 import { isReservedCell, makeLayout, moduleOrigin } from './layout'
 import { applyLogoClear, logoClearRect, maskToPolygons } from './logo'
 import { insetPolygon, offsetPolygon } from './offset'
@@ -19,13 +19,14 @@ import {
   CASSETTE_HEAD_STRIP_RAISE_MM,
   CASSETTE_LIP_H_MM,
   CASSETTE_PLATE_T_MM,
-  CASSETTE_WINDOW_DEPTH_MM,
-  CASSETTE_HEIGHT_MM,
-  cassetteChannelPoly,
   cassetteCornerHoles,
+  cassetteFaceWells,
+  cassetteFrame,
   cassetteHeadStrip,
   cassetteLipPoly,
+  cassetteOutline,
   cassettePlate,
+  type CassetteFaceShape,
 } from './cassette'
 import type { CassetteKit } from './cassetteParts'
 import { meshBBox, originPins, translateMesh } from './mesh'
@@ -141,20 +142,32 @@ export function buildBodies(
   const modules = clearLogo ? applyLogoClear(matrix.modules, percent) : matrix.modules
   const scaled = isShaped && tagPlate ? scaleCustomPlate(tagPlate, layout.widthMm) : null
   const outline =
-    isShaped && tagPlate
-      ? customFrame(tagPlate, layout.widthMm, 0).outer
-      : plateOutlineAt(layout.shape, layout.widthMm, layout.heightMm)
+    settings.plateShape === 'cassette'
+      ? cassetteOutline()
+      : isShaped && tagPlate
+        ? customFrame(tagPlate, layout.widthMm, 0).outer
+        : plateOutlineAt(layout.shape, layout.widthMm, layout.heightMm)
   const useInsetFrame = settings.insetFrame
   const frame = !useInsetFrame
     ? null
-    : isShaped && tagPlate
-      ? customFrame(tagPlate, layout.widthMm, layout.frameMm)
-      : plateFrameAt(layout.shape, layout.widthMm, layout.heightMm, layout.frameMm)
-  const modulesPolys = blackModulePolys(settings, modules, layout)
-  const logos =
+    : settings.plateShape === 'cassette'
+      ? cassetteFrame(layout.frameMm)
+      : isShaped && tagPlate
+        ? customFrame(tagPlate, layout.widthMm, layout.frameMm)
+        : plateFrameAt(layout.shape, layout.widthMm, layout.heightMm, layout.frameMm)
+  const faceWells = settings.plateShape === 'cassette' ? cassetteFaceWells() : []
+  const faceClips: ClipPolygon[] = faceWells.map((w) => [
+    toRing(w.outer),
+    ...w.holes.map((h) => toRing(h)),
+  ])
+  const holeClips: ClipPolygon[] = (scaled?.holes ?? []).map((h) => [toRing(h)])
+  const modulesPolys = clipAgainst(blackModulePolys(settings, modules, layout), holeClips)
+  const logos = clipAgainst(
     logoMask && !settings.blankLogo
       ? logoPolys(matrix.size, layout, logoMask, percent)
-      : []
+      : [],
+    holeClips,
+  )
 
   const black: Triangle[] = [
     ...(frame ? extrudeRing(frame.outer, [frame.hole], 0, settings.blackHeightMm) : []),
@@ -165,14 +178,16 @@ export function buildBodies(
   const grownModules = [...modulesPolys, ...logos].map((p) => offsetPolygon(p, GAP_MM))
   const subtractFrame = !useInsetFrame
     ? null
-    : isShaped && tagPlate
-      ? customFrame(tagPlate, layout.widthMm, layout.frameMm + GAP_MM)
-      : plateFrameAt(
-          layout.shape,
-          layout.widthMm,
-          layout.heightMm,
-          layout.frameMm + GAP_MM,
-        )
+    : settings.plateShape === 'cassette'
+      ? cassetteFrame(layout.frameMm + GAP_MM)
+      : isShaped && tagPlate
+        ? customFrame(tagPlate, layout.widthMm, layout.frameMm + GAP_MM)
+        : plateFrameAt(
+            layout.shape,
+            layout.widthMm,
+            layout.heightMm,
+            layout.frameMm + GAP_MM,
+          )
 
   const tagHole = settings.dogtagHole
     ? dogtagHole(layout.widthMm, layout.heightMm, settings.holeDiameterMm)
@@ -183,6 +198,7 @@ export function buildBodies(
     ...(subtractFrame ? [[toRing(subtractFrame.outer), toRing(subtractFrame.hole)]] : []),
     ...grownModules.map((p) => [toRing(p)]),
     ...svgHoles.map((h) => [toRing(h)]),
+    ...faceClips,
   ]
   if (tagHole) clips.push([toRing(tagHole.poly)])
   const fill =
@@ -197,10 +213,10 @@ export function buildBodies(
       outline,
       [...throughHoles, ...pins],
       grownModules,
-      cassetteChannelPoly(),
       settings.blackHeightMm,
       settings.cassetteLid,
       subtractFrame,
+      faceWells,
     )
     const box = meshBBox(white)
     const whiteOnOrigin = translateMesh(white, -box.minX, -box.minY, -box.minZ)
@@ -255,24 +271,41 @@ function clipPieces(geom: MultiPolygon): { outer: Polygon; holes: Polygon[] }[] 
   return out
 }
 
+function clipAgainst(polys: Polygon[], blockers: ClipPolygon[]): Polygon[] {
+  if (polys.length === 0 || blockers.length === 0) return polys
+  const block = unionMany(blockers)
+  if (block.length === 0) return polys
+  const out: Polygon[] = []
+  for (const p of polys) {
+    if (p.length < 3) continue
+    const leftover = difference([toRing(p)], ...block)
+    for (const piece of clipPieces(leftover)) {
+      if (piece.outer.length >= 3) out.push(piece.outer)
+    }
+  }
+  return out
+}
+
 function cassetteSolidPlate(
   outline: Polygon,
   throughHoles: Polygon[],
   qrPockets: Polygon[],
-  windowPocket: Polygon,
   zQr: number,
   withLip: boolean,
   frame: { outer: Polygon; hole: Polygon } | null,
+  faceWells: CassetteFaceShape[] = [],
 ): Triangle[] {
   const z0 = 0
   const zTop = CASSETTE_PLATE_T_MM
-  const zWin = Math.max(zQr, CASSETTE_WINDOW_DEPTH_MM)
   const inner = frame ? frame.hole : outline
-  const window = clipWindowToInner(windowPocket, inner)
+  const faceClips: ClipPolygon[] = faceWells.map((w) => [
+    toRing(w.outer),
+    ...w.holes.map((h) => toRing(h)),
+  ])
   const clips: ClipPolygon[] = [
     ...throughHoles.map((h) => [toRing(h)]),
     ...qrPockets.map((p) => [toRing(p)]),
-    ...(window ? [[toRing(window)]] : []),
+    ...faceClips,
   ]
   const fill = difference([toRing(inner)], ...unionMany(clips))
   const tris: Triangle[] = []
@@ -283,9 +316,13 @@ function cassetteSolidPlate(
       tris.push(...ringWalls(hole, z0, zQr, false))
     }
   }
-  if (qrPockets.length) {
+  const wellSources = [
+    ...qrPockets.map((p) => [toRing(p)] as ClipPolygon),
+    ...faceClips,
+  ]
+  if (wellSources.length) {
     const qrCeil = difference(
-      unionMany(qrPockets.map((p) => [toRing(p)])),
+      unionMany(wellSources),
       ...throughHoles.map((h) => [toRing(h)]),
     )
     for (const piece of clipPieces(qrCeil)) {
@@ -295,17 +332,7 @@ function cassetteSolidPlate(
   if (frame) {
     tris.push(...capFaces(frame.outer, [frame.hole, ...throughHoles], zQr, false))
   }
-  if (window && zWin > zQr + 1e-6) {
-    const headY = CASSETTE_HEIGHT_MM
-    const notMouth = (a: { y: number }, b: { y: number }) =>
-      !(Math.abs(a.y - headY) < 0.3 && Math.abs(b.y - headY) < 0.3)
-    tris.push(...ringWallsWhere(window, zQr, zWin, false, notMouth))
-    tris.push(...capFaces(window, [], zWin, false))
-    tris.push(...ringWallsWhere(outline, zQr, zWin, true, notMouth))
-    tris.push(...ringWalls(outline, zWin, zTop, true))
-  } else {
-    tris.push(...ringWalls(outline, zQr, zTop, true))
-  }
+  tris.push(...ringWalls(outline, zQr, zTop, true))
   const lip = withLip ? cassetteLipPoly() : null
   if (lip) {
     tris.push(...capFaces(outline, [...throughHoles, lip], zTop, true))
@@ -318,13 +345,6 @@ function cassetteSolidPlate(
     tris.push(...ringWalls(hole, zQr, zTop, false))
   }
   return tris
-}
-
-function clipWindowToInner(windowPocket: Polygon, inner: Polygon): Polygon | null {
-  const cut = intersection([toRing(windowPocket)], [toRing(inner)])
-  const first = cut[0]?.[0]
-  if (!first || first.length < 3) return null
-  return fromRing(first)
 }
 
 function whiteSolid(

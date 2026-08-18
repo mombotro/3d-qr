@@ -702,17 +702,93 @@ describe('buildBodies', () => {
         maxY = Math.max(maxY, v[1])
       }
     }
-    const edge = { x: 50, y: maxY - 0.4 }
+    const side = { x: 10, y: 2 }
     const window = { x: 50, y: 56 }
-    expect(covers(blackBed, edge)).toBe(true)
-    expect(covers(whiteBed, edge)).toBe(false)
+    expect(covers(blackBed, side)).toBe(true)
+    expect(covers(whiteBed, side)).toBe(false)
     expect(covers(blackBed, window)).toBe(false)
-    const winFloor = white.filter(
-      (t) =>
-        Math.abs(t.a[2] - 1) < 0.05 &&
-        Math.abs(t.b[2] - 1) < 0.05 &&
-        Math.abs(t.c[2] - 1) < 0.05,
+    expect(covers(whiteBed, window)).toBe(true)
+  })
+
+  it('keeps QR modules in the cassette rim and window', () => {
+    const load = (name: string) => {
+      const buf = readFileSync(join(process.cwd(), 'cassette', name))
+      return readBinaryStl(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+        .triangles
+    }
+    const tag = clampSettings({
+      content: settings.content,
+      plateShape: 'cassette',
+      blackHeightMm: 0.6,
+      insetFrame: false,
+      cassetteLid: true,
+    })
+    const kit = {
+      top: prepareTopPlate(load('top-plate-qr.stl')),
+      bottom: [],
+      slider: [],
+      access: [],
+    }
+    const { black, white } = buildBodies(tag, matrix, undefined, null, kit)
+    const layout = makeLayout(
+      tag.widthMm,
+      matrix.size,
+      'cassette',
+      63.6,
+      tag.qrOffsetXMm,
+      tag.qrOffsetYMm,
+      false,
+      4,
+      tag.qrSizePercent,
     )
-    expect(covers(winFloor, window)).toBe(true)
+    const atZ = (tris: typeof white, z: number) =>
+      tris.filter(
+        (t) =>
+          Math.abs(t.a[2] - z) < 0.08 &&
+          Math.abs(t.b[2] - z) < 0.08 &&
+          Math.abs(t.c[2] - z) < 0.08,
+      )
+    const covers = (tris: typeof white, p: { x: number; y: number }) =>
+      tris.some((t) => {
+        const x1 = t.a[0]
+        const y1 = t.a[1]
+        const x2 = t.b[0]
+        const y2 = t.b[1]
+        const x3 = t.c[0]
+        const y3 = t.c[1]
+        const denom = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+        if (Math.abs(denom) < 1e-12) return false
+        const a = ((y2 - y3) * (p.x - x3) + (x3 - x2) * (p.y - y3)) / denom
+        const b = ((y3 - y1) * (p.x - x3) + (x1 - x3) * (p.y - y3)) / denom
+        const c = 1 - a - b
+        return a >= -1e-6 && b >= -1e-6 && c >= -1e-6
+      })
+    const inWindow = (p: { x: number; y: number }) =>
+      p.x > 40 && p.x < 60 && p.y > 23 && p.y < 34
+    const inRim = (p: { x: number; y: number }) =>
+      p.x > 25 && p.x < 75 && p.y > 48.2 && p.y < 49
+    let windowMod: { x: number; y: number } | null = null
+    let rimMod: { x: number; y: number } | null = null
+    for (let r = 0; r < matrix.size; r++) {
+      for (let c = 0; c < matrix.size; c++) {
+        if (!matrix.modules[r][c]) continue
+        const o = moduleOrigin(layout, r, c)
+        const mid = { x: o.x + layout.moduleMm / 2, y: o.y + layout.moduleMm / 2 }
+        if (!windowMod && inWindow(mid)) windowMod = mid
+        if (!rimMod && inRim(mid)) rimMod = mid
+      }
+    }
+    expect(windowMod).not.toBeNull()
+    expect(covers(atZ(black, 0), windowMod!)).toBe(true)
+    expect(covers(atZ(white, 0), windowMod!)).toBe(false)
+    if (rimMod) {
+      expect(covers(atZ(black, 0), rimMod)).toBe(true)
+      expect(covers(atZ(white, 0), rimMod)).toBe(false)
+    }
+    const emptyWell = { x: 22, y: 48.5 }
+    if (!covers(atZ(black, 0), emptyWell)) {
+      expect(covers(atZ(white, 0), emptyWell)).toBe(false)
+      expect(covers(atZ(white, 0.6), emptyWell)).toBe(true)
+    }
   })
 })
